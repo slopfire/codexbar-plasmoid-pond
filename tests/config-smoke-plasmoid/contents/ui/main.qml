@@ -1,15 +1,12 @@
 import QtQuick
-import QtQuick.Layouts
 import org.kde.plasma.plasmoid
 import org.kde.plasma.plasma5support as Plasma5Support
 
 PlasmoidItem {
     id: harness
 
-    Layout.minimumWidth: 900
-    Layout.minimumHeight: 640
     width: 900
-    height: 640
+    height: 700
 
     property int attempts: 0
     property bool resultRecorded: false
