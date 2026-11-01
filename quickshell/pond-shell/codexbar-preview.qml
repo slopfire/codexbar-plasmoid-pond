@@ -19,6 +19,12 @@ ShellRoot {
     const out = [];
     function walk(node) {
       if ("interactive" in node && "pageState" in node && !node.interactive) return;
+      for (const resource of node.resources || []) {
+        if (resource.objectName === "pondToolTip") out.push({tooltip: true, visible: resource.visible,
+          width: resource.width, height: resource.height, text: resource.text, heading: resource.heading,
+          background: String(resource.background.color), radius: resource.background.radius,
+          contentHeight: resource.contentItem.implicitHeight, availableHeight: resource.availableHeight});
+      }
       if ("gauges" in node) out.push({gauges: node.gauges, provider: node.entry.provider,
         background: String(node.children[0].color), alpha: node.children[0].color.a});
       if ("hasMarker" in node) out.push({ring: true, value: node.value, timeLeft: node.timeLeft,

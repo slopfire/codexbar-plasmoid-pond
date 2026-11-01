@@ -241,6 +241,34 @@ export function accessibleLabel(tile, nowMs) {
   return [name, status, rings || "no usage"].filter(Boolean).join(", ");
 }
 
+/** Keep visual hints short. The accessible label retains the full sentence. */
+export function providerTooltip(tile, nowMs) {
+  if (!tile?.entry) return "";
+  const entry = tile.entry;
+  const parts = [];
+  const status = stateText(entry);
+  if (status) parts.push(status);
+  for (const ring of tile.rings || []) {
+    if (ring.row) parts.push(windowTooltip(ring.row, nowMs));
+    else parts.push(`${ring.text} ${ring.kind === "resets" ? "resets available" : "credits left"}`);
+  }
+  if (entry.error || entry.lastAttemptError) parts.push(errorText(entry));
+  return parts.join("\n\n") || "No usage limits";
+}
+
+export function windowTooltip(row, nowMs, locale) {
+  if (!row) return "";
+  const lines = [`${row.title || windowLabel(row)} · ${Math.round(row.percentLeft)}% left`];
+  const time = windowLeft(row, nowMs);
+  const timing = [resetText(row, nowMs, locale)];
+  if (time >= 0) timing.push(`${Math.round(time * 100)}% of window left`);
+  if (timing.filter(Boolean).length) lines.push(timing.filter(Boolean).join(" · "));
+  const verdict = paceVerdict(row);
+  if (verdict) lines.push(verdict === "lasts" ? "Lasts until reset"
+    : verdict === "runs dry" ? "May run out before reset" : "Little reserve before reset");
+  return lines.join("\n");
+}
+
 export function providerName(provider) {
   const id = normalizeId(provider);
   return NAMES[id] || String(provider || "CodexBar");

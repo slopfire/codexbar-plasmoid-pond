@@ -1,6 +1,5 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import QtQuick.Controls as Controls
 import "CodexBarModel.mjs" as Model
 import ".." as Shell
 
@@ -64,12 +63,10 @@ Column {
         Keys.onReturnPressed: if (root.interactive) root.selectedIndex = index
         Keys.onSpacePressed: if (root.interactive) root.selectedIndex = index
         Keys.onEscapePressed: root.selectedIndex = -1
-        Controls.ToolTip {
-          id: dayTip
+        PondToolTip {
           text: Model.historyTooltip(cell.modelData)
           visible: root.interactive && hover.hovered
           delay: 250
-          contentItem: Text { text: dayTip.text; font: dayTip.font; color: dayTip.palette.toolTipText; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         }
 
         Rectangle {

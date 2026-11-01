@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Controls as Controls
 import "CodexBarModel.mjs" as Model
 import ".." as Shell
 
@@ -39,12 +38,10 @@ Item {
       activeFocusOnTab: true
       Accessible.role: Accessible.Button
       Accessible.name: Model.accessibleLabel({ entry: entry, rings: gauges }, root.state.nowMs)
-      Controls.ToolTip {
-        id: rowTip
+      PondToolTip {
         visible: pointer.hovered || line.activeFocus
-        delay: 500
-        text: line.Accessible.name
-        contentItem: Text { text: rowTip.text; font: rowTip.font; color: rowTip.palette.toolTipText; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+        heading: Model.providerName(line.entry.provider)
+        text: Model.providerTooltip({entry: line.entry, rings: line.gauges}, root.state.nowMs)
       }
       Accessible.onPressAction: root.rowClicked(line.entry)
       Keys.onReturnPressed: root.rowClicked(line.entry)

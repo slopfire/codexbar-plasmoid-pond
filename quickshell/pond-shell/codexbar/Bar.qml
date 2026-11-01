@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls as Controls
 import "CodexBarModel.mjs" as Model
 import ".." as Shell
 
@@ -33,12 +32,9 @@ Item {
   implicitHeight: wide ? caption.y + caption.implicitHeight : bar.y + bar.height
   Accessible.role: Accessible.ProgressBar
   Accessible.name: Model.windowDescription(row, nowMs, Qt.locale().name)
-  Controls.ToolTip {
-    id: barTip
+  PondToolTip {
     visible: hover.hovered
-    delay: 500
-    text: root.Accessible.name
-    contentItem: Text { text: barTip.text; font: barTip.font; color: barTip.palette.toolTipText; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+    text: Model.windowTooltip(root.row, root.nowMs, Qt.locale().name)
   }
   HoverHandler { id: hover }
 

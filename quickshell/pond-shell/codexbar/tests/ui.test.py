@@ -22,6 +22,8 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
     template = (source / "codexbar-preview.qml").read_text()
     template = template.replace("import QtQuick", "import QtQuick\nimport QtTest", 1)
     template = template.replace("  id: root\n", '  id: root\n  TestCase { id: input; name: "CodexBarInput"; when: false }\n', 1)
+    template = template.replace('    title: "CodexBar Pond review"', '''    title: "CodexBar Pond review"
+    Codexbar.ProviderIcon { id: tintIcon; x: 600; y: 600; provider: "opencode"; size: 18; color: "#cba6f7" }''')
     template = template.replace("    function focusRow() {", '''    function hoverRow() {
       function walk(node) {
         if ("gauges" in node) { input.mouseMove(node, 10, 10); return true; }
@@ -45,6 +47,12 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
         return false;
       }
       walk(drawer);
+    }
+    function tintGlyph(color: string) { tintIcon.color = color; }
+    function iconPixels(): string {
+      const image = input.grabImage(tintIcon);
+      return JSON.stringify({red: image.red(4, 9), green: image.green(4, 9), blue: image.blue(4, 9),
+        hole: [image.red(9, 9), image.green(9, 9), image.blue(9, 9)]});
     }
     function nextHistoryDay() { input.keyClick(Qt.Key_Right); }
     function applySettings() {
@@ -93,6 +101,19 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
             assert spend["y"] >= bars["y"] + bars["height"] + 10, report
         try:
             wait_for(lambda report: len(report["tree"]) > 0)
+            def check_tint(rgb):
+                until = time.monotonic() + 3
+                while time.monotonic() < until:
+                    pixel = json.loads(call("iconPixels"))
+                    if all(abs(pixel[key] - value) <= 3 for key, value in zip(("red", "green", "blue"), rgb)):
+                        assert all(abs(value - background) <= 3 for value, background in zip(pixel["hole"], (139, 163, 166))), pixel
+                        return
+                    time.sleep(0.04)
+                raise AssertionError(pixel)
+            check_tint((203, 166, 247))
+            call("tintGlyph", "#183040")
+            check_tint((24, 48, 64))
+            print("ok - a black SVG follows light and dark tints and keeps its transparent cutout")
             report = wait_for(lambda report: any(item.get("ring") and item["marker"] for item in report["tree"]))
             rings = [item for item in report["tree"] if item.get("ring") and item["visible"]]
             assert len(rings) == 6 and all(item["marker"] and 0 <= item["timeLeft"] <= 1 for item in rings), rings
@@ -109,6 +130,12 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
                 if row["alpha"] > 0:
                     assert row["background"].endswith("ffffff"), row
                 time.sleep(0.04)
+            report = wait_for(lambda report: any(item.get("tooltip") and item["visible"] for item in report["tree"]))
+            tip = next(item for item in report["tree"] if item.get("tooltip") and item["visible"])
+            assert tip["width"] == 292 and tip["background"] == "#1d1d1d" and tip["radius"] == 12, tip
+            assert tip["contentHeight"] <= tip["availableHeight"] + 1, tip
+            assert tip["heading"] == "Codex" and "\n\n" in tip["text"], tip
+            print("ok - tooltip uses Pond colors, rounded corners and a bounded multiline layout")
             print("ok - pointer hover stays translucent and circular pace styles update")
             call("collapse", 1)
             report = wait_for(lambda report: any(item.get("ring") and item["visible"] and item["size"] == 28 for item in report["tree"]))

@@ -32,11 +32,22 @@ Item {
     source: root.iconPath === "" ? "" : Qt.resolvedUrl(root.iconPath)
     sourceSize: Qt.size(Math.ceil(root.size * 2), Math.ceil(root.size * 2))
     fillMode: Image.PreserveAspectFit
+    visible: false
+    layer.enabled: true
+    layer.smooth: true
+  }
+
+  Rectangle {
+    anchors.fill: parent
     visible: root.hasIcon
+    color: root.color
     layer.enabled: true
     layer.effect: MultiEffect {
-      colorization: 1
-      colorizationColor: root.color
+      maskEnabled: true
+      maskSource: mark
+      // Keep antialiased edges instead of turning every nonzero alpha opaque.
+      maskThresholdMin: 0.5
+      maskSpreadAtMin: 1
     }
   }
 

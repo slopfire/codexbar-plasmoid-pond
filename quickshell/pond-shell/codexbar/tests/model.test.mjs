@@ -256,4 +256,17 @@ test("zero reset credits remain visible without a full availability ring", () =>
   assert.equal(Model.resetCreditsOf(entry({limitResetCredits: {availableCount: null}})), null);
 });
 
+test("visual hints separate each window and preserve the full accessible label", () => {
+  const item = entry({provider: "opencode", rows: [{title: "Rolling usage", percentLeft: 100},
+    {title: "Weekly usage", percentLeft: 90, windowMinutes: 60, resetsAt: new Date(now + 30 * 60000).toISOString()}]});
+  const tile = {entry: item, rings: Model.sidebarRings(item, 2)};
+  const hint = Model.providerTooltip(tile, now);
+  assert.match(hint, /Rolling usage · 100% left/);
+  assert.match(hint, /Weekly usage · 90% left/);
+  assert.match(hint, /50% of window left/);
+  assert.ok(hint.includes("\n\n"));
+  assert.match(Model.accessibleLabel(tile, now), /^OpenCode,/);
+  assert.equal(Model.providerTooltip({entry: entry({creditsRemaining: 12}), rings: Model.rings(entry({creditsRemaining: 12}), 1)}, now), "12 credits left");
+});
+
 console.log(`\n${passed} tests passed`);
