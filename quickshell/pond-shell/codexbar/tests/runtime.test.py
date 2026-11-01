@@ -59,6 +59,20 @@ ShellRoot {
       usage.settings = previous;
       return JSON.stringify(args);
     }
+    function pollIntervals(): string {
+      const previous = usage.settings;
+      usage.settings = {refreshIntervalSeconds: 150, providerConfigs: [
+        {provider: "openai", refreshIntervalSeconds: 600},
+        {provider: "gemini", refreshIntervalSeconds: 60, enabled: false}
+      ]};
+      const slow = usage.pollSeconds;
+      usage.settings = Object.assign({}, usage.settings, {providerConfigs: [
+        {provider: "openai", refreshIntervalSeconds: 600}, {provider: "gemini", refreshIntervalSeconds: 60}
+      ]});
+      const fast = usage.pollSeconds;
+      usage.settings = previous;
+      return JSON.stringify([slow, fast, usage.pollSeconds]);
+    }
     function discover() { usage.discoverAccounts({provider: "codex", source: "cli"}); }
     function save() { usage.saveSettings({credits: false}, usage.settings); }
     function staleSave() { usage.saveSettings({credits: true}, {}); }
@@ -115,7 +129,9 @@ ShellRoot {
                             "--timeout": "300", "--retry-attempts": "4", "--cooldown-cap-seconds": "3600",
                             "--cost-timeout": "1800"}.items():
             assert args[args.index(flag) + 1] == value, args
-        print("ok - helper output updates usage and fetch controls reach helper arguments")
+        assert args[args.index("--refresh-interval-seconds") + 1] == "86400", args
+        assert json.loads(ipc("pollIntervals")) == [600, 60, 150]
+        print("ok - helper output updates usage and provider intervals set the polling timer")
         control(fail=True)
         ipc("refresh")
         state = wait_for(lambda s: s["failed"] and not s["running"])

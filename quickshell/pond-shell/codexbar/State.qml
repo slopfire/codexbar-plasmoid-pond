@@ -55,6 +55,7 @@ Item {
   readonly property bool autoUpdate: settings.autoUpdateCli === true
   readonly property string provider: String(settings.provider || "all")
   readonly property int refreshSeconds: Math.max(60, Math.min(86400, Number(settings.refreshIntervalSeconds) || 150))
+  readonly property int pollSeconds: Math.max(60, Math.min(86400, Preferences.refreshInterval(settings, detectedProviders())))
   readonly property bool includeCost: settings.cost !== false
   readonly property bool includeStatus: settings.includeStatus !== false
   readonly property bool shareProviderFetches: settings.shareProviderFetches !== false
@@ -126,6 +127,7 @@ Item {
       "--anonymize-emails", options.anonymize ? "true" : "false",
       "--auto-update", options.autoUpdate ? "true" : "false",
       "--cache-seconds", String(root.shareProviderFetches ? root.refreshSeconds : 0),
+      "--refresh-interval-seconds", String(root.refreshSeconds),
       "--cost-cache-seconds", String(root.costRefreshIntervalSeconds),
       "--retry-attempts", String(root.providerRetryAttempts),
       "--cooldown-cap-seconds", String(root.failureCooldownSeconds),
@@ -354,7 +356,7 @@ Item {
       const wait = Math.min(1800, 60 * Math.pow(2, failures - 1));
       restartDelay.interval = wait * 1000;
     } else {
-      restartDelay.interval = refreshSeconds * 1000;
+      restartDelay.interval = pollSeconds * 1000;
     }
     restartDelay.restart();
   }

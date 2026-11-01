@@ -2218,7 +2218,7 @@ function providerLabels(providerId) {
       // windows do not identify models, so avoid inventing model names here.
       return { session: "Limit 1", weekly: "Limit 2", tertiary: "Limit 3" };
     case "opencode":
-      return { session: "Rolling Usage", weekly: "Weekly Usage", tertiary: "Extra" };
+      return { session: "Rolling Usage", weekly: "Weekly Usage", tertiary: "Monthly Usage" };
     case "opencodego":
       return { session: "Rolling Usage", weekly: "Weekly Usage", tertiary: "Monthly Usage" };
     case "devin":

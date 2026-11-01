@@ -14,9 +14,8 @@
 //! micro-cents against a per-window limit, which maps onto the plasmoid's
 //! primary (5-hour) / secondary (weekly) / tertiary (monthly) bars.
 //!
-//! `opencode` and `opencodego` render the same meters; the former keeps its
-//! two-bar contract (rolling + weekly). Local OpenCode SQLite history is
-//! pay-as-you-go spend and never maps onto subscription bars — that produced
+//! `opencode` and `opencodego` render all three meters.
+//! Local OpenCode SQLite history is pay-as-you-go spend and never maps onto subscription bars — that produced
 //! full "100%" remaining bars for users with an API key but no Go plan. Local
 //! token spend still surfaces through the separate `cost` command.
 
@@ -150,15 +149,10 @@ fn micro_cents(value: Option<&str>) -> Option<f64> {
     parsed.is_finite().then_some(parsed)
 }
 
-/// Fetch subscription usage for `opencodego` (`include_monthly`) or `opencode`,
+/// Fetch subscription usage for `opencodego` or `opencode`,
 /// discovering every signed-in account across browser cookie stores. Returns one
 /// payload per account so the plasmoid can render each account separately.
-pub fn fetch(
-    http: &HttpClient,
-    provider: &str,
-    include_monthly: bool,
-    home: &Path,
-) -> Vec<ProviderPayload> {
+pub fn fetch(http: &HttpClient, provider: &str, home: &Path) -> Vec<ProviderPayload> {
     let cookies = resolve_all_cookie_headers(provider);
     if !cookies.is_empty() {
         let mut successes = Vec::new();
@@ -172,7 +166,7 @@ pub fn fetch(
                 }
                 continue;
             };
-            match fetch_all_orgs(http, &session, provider, include_monthly, &cookie.source) {
+            match fetch_all_orgs(http, &session, provider, &cookie.source) {
                 Ok(payloads) => successes.extend(payloads),
                 Err(error) => {
                     if first_error.is_none() {
@@ -269,7 +263,6 @@ fn fetch_all_orgs(
     http: &HttpClient,
     session: &str,
     provider: &str,
-    include_monthly: bool,
     source_label: &str,
 ) -> Result<Vec<ProviderPayload>> {
     let org_ids = resolve_org_ids(http, session)?;
@@ -278,14 +271,7 @@ fn fetch_all_orgs(
     }
     let mut payloads = Vec::new();
     for org_id in &org_ids {
-        match fetch_one_org(
-            http,
-            session,
-            provider,
-            include_monthly,
-            source_label,
-            org_id,
-        ) {
+        match fetch_one_org(http, session, provider, source_label, org_id) {
             Ok(Some(payload)) => payloads.push(payload),
             // Organisation without Go access (pay-as-you-go): not an error,
             // just no subscription bars for this org.
@@ -350,7 +336,6 @@ fn fetch_one_org(
     http: &HttpClient,
     session: &str,
     provider: &str,
-    include_monthly: bool,
     source_label: &str,
     org_id: &str,
 ) -> Result<Option<ProviderPayload>> {
@@ -366,43 +351,42 @@ fn fetch_one_org(
     let Some(access) = status.access.as_ref() else {
         return Ok(None);
     };
-    let Some(meters) = access.meters.as_ref() else {
+    if access.meters.is_none() {
         return Ok(None);
-    };
-
-    let primary = meter_window(meters.five_hour.as_ref(), NOMINAL_FIVE_HOUR_MINUTES);
-    let secondary = meter_window(meters.week.as_ref(), NOMINAL_WEEK_MINUTES);
-    let tertiary = if include_monthly {
-        let month_fallback = access.period_minutes().unwrap_or(NOMINAL_MONTH_MINUTES);
-        meter_window(meters.month.as_ref(), month_fallback)
-    } else {
-        None
-    };
-    if primary.is_none() && secondary.is_none() && tertiary.is_none() {
-        return Err(anyhow!("Missing OpenCode Go usage fields."));
     }
+
+    let usage = subscription_usage(access)?;
 
     let account =
         fetch_org_email(http, session, org_id).or_else(|| status.subscriber_user_id.clone());
-    let mut payload = ProviderPayload::ok(
-        provider,
-        UsageSnapshot {
-            primary,
-            secondary,
-            tertiary,
-            usage_rows: None,
-            provider_cost: None,
-            cursor_requests: None,
-            updated_at: Utc::now(),
-            identity: None,
-        },
-        account,
-        None,
-        None,
-    );
+    let mut payload = ProviderPayload::ok(provider, usage, account, None, None);
     payload.source = source_label.to_string();
     payload.site_url = Some(format!("{CONSOLE_BASE}/{org_id}/go"));
     Ok(Some(payload))
+}
+
+fn subscription_usage(access: &GoAccess) -> Result<UsageSnapshot> {
+    let meters = access
+        .meters
+        .as_ref()
+        .ok_or_else(|| anyhow!("Missing OpenCode Go usage fields."))?;
+    let primary = meter_window(meters.five_hour.as_ref(), NOMINAL_FIVE_HOUR_MINUTES);
+    let secondary = meter_window(meters.week.as_ref(), NOMINAL_WEEK_MINUTES);
+    let month_fallback = access.period_minutes().unwrap_or(NOMINAL_MONTH_MINUTES);
+    let tertiary = meter_window(meters.month.as_ref(), month_fallback);
+    if primary.is_none() && secondary.is_none() && tertiary.is_none() {
+        return Err(anyhow!("Missing OpenCode Go usage fields."));
+    }
+    Ok(UsageSnapshot {
+        primary,
+        secondary,
+        tertiary,
+        usage_rows: None,
+        provider_cost: None,
+        cursor_requests: None,
+        updated_at: Utc::now(),
+        identity: None,
+    })
 }
 
 /// Best-effort account email for an org; a missing address must not fail the
@@ -580,6 +564,30 @@ mod tests {
 
     fn at(value: &str) -> Option<DateTime<Utc>> {
         Some(value.parse::<DateTime<Utc>>().expect("timestamp"))
+    }
+
+    #[test]
+    fn subscription_usage_keeps_exhausted_monthly_meter() {
+        let status: GoStatus = serde_json::from_value(serde_json::json!({
+            "access": {
+                "startsAt": "2026-10-02T13:14:20Z",
+                "endsAt": "2026-11-02T13:14:20Z",
+                "meters": {
+                    "fiveHour": {"limitMicroCents": "100", "usedMicroCents": "0"},
+                    "week": {"limitMicroCents": 100, "usedMicroCents": 10},
+                    "month": {"limitMicroCents": "100", "usedMicroCents": "120",
+                        "resetsAt": "2026-11-02T13:14:20Z"}
+                }
+            }
+        }))
+        .expect("status");
+        let usage = super::subscription_usage(&status.access.expect("access")).expect("usage");
+        assert_eq!(usage.primary.expect("rolling").remaining_percent, 100.0);
+        assert_eq!(usage.secondary.expect("weekly").remaining_percent, 90.0);
+        let month = usage.tertiary.expect("monthly");
+        assert_eq!(month.remaining_percent, 0.0);
+        assert_eq!(month.window_minutes, Some(31 * 24 * 60));
+        assert_eq!(month.resets_at, at("2026-11-02T13:14:20Z"));
     }
 
     #[test]

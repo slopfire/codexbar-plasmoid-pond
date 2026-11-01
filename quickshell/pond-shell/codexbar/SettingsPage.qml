@@ -332,6 +332,51 @@ Item {
           }
           Text { width: parent.width; visible: !!root.pageState.authMessage; text: root.pageState.authMessage || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: "white"; opacity: 0.6; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
         }
+        Text {
+          width: parent.width
+          text: "Use global refresh and retry settings, or set values for this provider. Manual refresh updates all providers."
+          wrapMode: Text.Wrap; color: "white"; opacity: 0.6
+          font.family: Shell.Theme.fontFamily; font.pixelSize: 11
+        }
+        SettingToggle {
+          objectName: "providerRefreshOverride"
+          width: parent.width; text: "Separate refresh interval"
+          checked: (root.config?.refreshIntervalSeconds || 0) > 0
+          onToggled: value => root.updateProvider("refreshIntervalSeconds", value ? root.draft.refreshIntervalSeconds || 150 : 0)
+        }
+        SettingNumber {
+          objectName: "providerRefreshInterval"
+          visible: (root.config?.refreshIntervalSeconds || 0) > 0
+          width: parent.width; text: "Refresh interval, seconds"; minimum: 60; maximum: 86400; step: 30
+          value: root.config?.refreshIntervalSeconds || 150
+          onChanged: value => root.updateProvider("refreshIntervalSeconds", value)
+        }
+        SettingToggle {
+          objectName: "providerRetryOverride"
+          width: parent.width; text: "Separate retry attempts"
+          checked: (root.config?.providerRetryAttempts || 0) > 0
+          onToggled: value => root.updateProvider("providerRetryAttempts", value ? root.draft.providerRetryAttempts || 2 : 0)
+        }
+        SettingNumber {
+          objectName: "providerRetryAttempts"
+          visible: (root.config?.providerRetryAttempts || 0) > 0
+          width: parent.width; text: "Attempts, including first try"; minimum: 1; maximum: 4
+          value: root.config?.providerRetryAttempts || 2
+          onChanged: value => root.updateProvider("providerRetryAttempts", value)
+        }
+        SettingToggle {
+          objectName: "providerCooldownOverride"
+          width: parent.width; text: "Separate failure cooldown"
+          checked: (root.config?.failureCooldownSeconds || 0) > 0
+          onToggled: value => root.updateProvider("failureCooldownSeconds", value ? root.draft.failureCooldownSeconds || 180 : 0)
+        }
+        SettingNumber {
+          objectName: "providerFailureCooldown"
+          visible: (root.config?.failureCooldownSeconds || 0) > 0
+          width: parent.width; text: "Maximum cooldown, seconds"; minimum: 30; maximum: 3600; step: 30
+          value: root.config?.failureCooldownSeconds || 180
+          onChanged: value => root.updateProvider("failureCooldownSeconds", value)
+        }
         SettingToggle { width: parent.width; text: "Include spend history"; checked: root.config?.includeCost !== false; onToggled: value => root.updateProvider("includeCost", value) }
         Row {
           spacing: 8

@@ -12,5 +12,5 @@ use std::path::Path;
 /// but no Go plan. Local token spend still shows under the separate `cost`
 /// command.
 pub fn fetch(http: &HttpClient, home: &Path) -> Vec<ProviderPayload> {
-    opencode_console::fetch(http, "opencodego", true, home)
+    opencode_console::fetch(http, "opencodego", home)
 }

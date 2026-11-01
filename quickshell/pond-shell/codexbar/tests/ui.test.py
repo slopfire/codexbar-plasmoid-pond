@@ -63,6 +63,24 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
       }
       walk(drawer);
     }
+    function monthlyLimit() {
+      usage.entries = [Object.assign({}, root.reference[0], {id: "opencode", provider: "opencode", rows: [
+        {id: "primary", title: "Rolling Usage", percentLeft: 100, windowMinutes: 300},
+        {id: "secondary", title: "Weekly Usage", percentLeft: 90, windowMinutes: 10080},
+        {id: "tertiary", title: "Monthly Usage", percentLeft: 0, windowMinutes: 43200,
+          resetsAt: new Date(Date.now() + 86400000).toISOString()}
+      ]})];
+    }
+    function configureProvider() {
+      function walk(node) {
+        if (node.objectName.startsWith("provider") && "toggled" in node) node.toggled(true);
+        if (node.objectName === "providerRefreshInterval") node.changed(600);
+        if (node.objectName === "providerRetryAttempts") node.changed(4);
+        if (node.objectName === "providerFailureCooldown") node.changed(60);
+        for (const child of node.children || []) walk(child);
+      }
+      walk(drawer);
+    }
     function manyWindows() {
       usage.entries = [Object.assign({}, root.reference[0], {rows: Array.from({length: 6}, (_, i) =>
         ({id: String(i), title: "Window " + i, percentLeft: 90 - i * 10, windowMinutes: (i + 1) * 60,
@@ -176,6 +194,15 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
                 "showProviderIcon": True, "showProviderName": True, "showRingTrack": True}))
             call("reset")
             print("ok - equal and decreasing nested rings fit provider rows and rails with hidden icons")
+            call("monthlyLimit")
+            report = wait_for(lambda report: any(item.get("provider") == "opencode" for item in report["tree"]))
+            gauges = next(item["gauges"] for item in report["tree"] if item.get("provider") == "opencode")
+            assert len(gauges) == 2 and gauges[1]["value"] == 0 and gauges[1]["row"]["title"] == "Monthly Usage", gauges
+            call("list")
+            report = wait_for(lambda report: report["page"] == "drawer" and not report["transitioning"])
+            assert len([item for item in report["pages"] if item.get("section") == "usageWindow" and item["visible"]]) == 3, report
+            call("reset")
+            print("ok - exhausted OpenCode monthly limit renders in the sidebar and all windows render in the drawer")
             call("list")
             report = wait_for(lambda report: report["page"] == "drawer" and not report["transitioning"])
             check_sections(report)
@@ -207,6 +234,7 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
             call("editProvider", 2)
             report = wait_for(lambda report: any(item.get("keyField") and item["masked"] for item in report["pages"]))
             print("ok - API provider setup has a masked credential field")
+            call("configureProvider")
             call("settingsTab", 0)
             call("configureFetch")
             call("applySettings")
@@ -217,6 +245,8 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
                         "ringSize": 40, "ringWidth": 3, "ringGap": 2, "showProviderIcon": False,
                         "showProviderName": False, "showRingValues": False, "showWindowLabels": False, "showRingTrack": False}
             assert all(report["settings"].get(key) == value for key, value in expected.items()), report
+            provider = report["settings"]["providerConfigs"][2]
+            assert provider["refreshIntervalSeconds"] == 600 and provider["providerRetryAttempts"] == 4 and provider["failureCooldownSeconds"] == 60, provider
             call("error")
             report = wait_for(lambda report: any(item.get("ring") and item["value"] == 100 and item["timeLeft"] == -1 for item in report["tree"]))
             assert all(not item["marker"] for item in report["tree"] if item.get("ring") and item["timeLeft"] == -1), report

@@ -155,6 +155,22 @@ test("sidebar columns retain duration order when the tightest window changes", (
   assert.equal(Model.rings(item, 1)[0].value, 26);
 });
 
+test("an exhausted monthly limit stays visible in a two-window sidebar", () => {
+  const item = entry({provider: "opencode", rows: [
+    {id: "primary", percentLeft: 100, windowMinutes: 300},
+    {id: "secondary", percentLeft: 90, windowMinutes: 10080},
+    {id: "tertiary", title: "Monthly Usage", percentLeft: 0, windowMinutes: 43200}
+  ]});
+  assert.deepEqual(Model.sidebarRings(item, 2).map(ring => ring.row.id), ["primary", "tertiary"]);
+  assert.equal(Model.sidebarRings(item, 1)[0].value, 0);
+  assert.equal(Model.headline(item).text, "0%");
+  assert.match(Model.accessibleLabel({entry: item, rings: Model.sidebarRings(item, 2)}, now), /Monthly Usage.*0%/);
+  item.rows[0].percentLeft = 0;
+  assert.deepEqual(Model.sidebarRings(item, 2).map(ring => ring.row.id), ["primary", "tertiary"]);
+  item.rows[2].percentLeft = 80;
+  assert.deepEqual(Model.sidebarRings(item, 2).map(ring => ring.row.id), ["primary", "secondary"]);
+});
+
 test("window labels distinguish minutes, days, months and named quotas", () => {
   for (const [minutes, label] of [[15, "15m"], [60, "1h"], [1440, "1d"], [43200, "1mo"]])
     assert.equal(Model.windowLabel({ windowMinutes: minutes }), label);

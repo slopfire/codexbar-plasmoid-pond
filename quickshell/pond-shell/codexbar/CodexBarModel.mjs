@@ -458,14 +458,24 @@ export function ringColor(entry, row, theme) {
   return providerColor(entry ? entry.provider : "");
 }
 
-/** Sidebar windows keep their duration order when usage changes. */
+/** Keep exhausted windows visible when the sidebar cannot fit every window. */
 export function sidebarRings(entry, count) {
   const limit = Math.max(1, Math.floor(Number(count) || 1));
   const rows = rowsOf(entry).sort((a, b) =>
     (Number(a.windowMinutes) > 0 ? Number(a.windowMinutes) : Infinity)
       - (Number(b.windowMinutes) > 0 ? Number(b.windowMinutes) : Infinity));
   if (rows.length > 0) {
-    return rows.slice(0, limit).map(row => ({
+    const selected = rows.slice(0, limit);
+    const exhausted = rows.filter(row => row.percentLeft === 0);
+    for (const row of exhausted) {
+      if (selected.includes(row)) continue;
+      let replace = selected.length - 1;
+      while (replace >= 0 && selected[replace].percentLeft === 0) replace--;
+      if (replace < 0) break;
+      selected[replace] = row;
+    }
+    selected.sort((a, b) => rows.indexOf(a) - rows.indexOf(b));
+    return selected.map(row => ({
       kind: "window", row, value: row.percentLeft,
       text: `${Math.round(row.percentLeft)}% ${windowLabel(row)} left`,
       label: windowLabel(row)

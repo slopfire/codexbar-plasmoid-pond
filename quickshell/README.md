@@ -145,3 +145,19 @@ it. The identical updater and retry modules are repository-relative symlinks
 to `plasmoid/contents/code/`; the installer copies their resolved contents.
 The Linux helper is built from `native-cli/` and installed beside the module.
 No generated binary is committed.
+
+## Provider refresh and retries
+
+In Settings, open Providers and select a provider. Each provider can override
+its refresh interval, retry attempts and maximum failure cooldown. Turn an
+override off to use the General setting. Attempts include the first try.
+Only temporary failures cause retries. Manual refresh updates all providers.
+
+Pond polls at the shortest enabled provider interval. It keeps each provider's
+reading until that provider's interval expires, then fetches it on the next
+poll. Separate intervals still apply when shared fetches are off. Cooldowns
+start at 30 seconds and increase up to the selected maximum.
+
+OpenCode shows rolling, weekly and monthly subscription limits. If the sidebar
+cannot fit every window, an exhausted window replaces a window with usage left.
+The provider page shows all windows and their reset times.

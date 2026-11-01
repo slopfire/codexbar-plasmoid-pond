@@ -67,6 +67,106 @@ try {
       for (const value of [0, "false", null]) assert.throws(() => Settings.validate({[key]: value}));
     }
   });
+  test("provider refresh and retry overrides validate and inherit global values", () => {
+    for (const [key, min, max] of [["refreshIntervalSeconds", 60, 86400],
+      ["providerRetryAttempts", 1, 4], ["failureCooldownSeconds", 30, 3600]]) {
+      for (const value of [undefined, 0, min, max])
+        Settings.validate({providerConfigs: [{...Settings.newProvider("opencode"), [key]: value}]});
+      for (const value of [-1, min + 0.5, max + 1, String(min), null])
+        assert.throws(() => Settings.validate({providerConfigs: [{...Settings.newProvider("opencode"), [key]: value}]}));
+    }
+    const settings = {refreshIntervalSeconds: 150, providerConfigs: [
+      {...Settings.newProvider("opencode"), refreshIntervalSeconds: 600},
+      {...Settings.newProvider("gemini"), refreshIntervalSeconds: 60, enabled: false}
+    ]};
+    assert.equal(Settings.refreshInterval(settings, []), 600);
+    settings.providerConfigs[1].enabled = true;
+    assert.equal(Settings.refreshInterval(settings, []), 60);
+    settings.providerConfigs[1].refreshIntervalSeconds = 0;
+    assert.equal(Settings.refreshInterval(settings, []), 150);
+    assert.equal(Settings.refreshInterval({}, ["codex"]), 150);
+  });
+  test("OpenCode monthly limits retain zero percent and their reset time", () => {
+    const cli = path.join(temporary, "monthly-cli.mjs");
+    fs.writeFileSync(cli, `#!/usr/bin/env node
+console.log(JSON.stringify([{provider: "opencode", source: "native", usage: {
+  primary: {usedPercent: 0, windowMinutes: 300}, secondary: {usedPercent: 10, windowMinutes: 10080},
+  tertiary: {usedPercent: 100, windowMinutes: 43200, resetsAt: "2026-11-02T13:14:20Z"}
+}}]));
+`, {mode: 0o700});
+    const result = helper([Settings.newProvider("opencode")], ["--cli", cli, "--nativeCli", cli]);
+    assert.equal(result.status, 0, result.stderr);
+    const rows = JSON.parse(result.stdout).entries[0].rows;
+    assert.equal(rows.length, 3);
+    assert.deepEqual([rows[2].id, rows[2].title, rows[2].percentLeft, rows[2].resetsAt],
+      ["tertiary", "Monthly Usage", 0, "2026-11-02T13:14:20Z"]);
+  });
+  test("providers keep separate refresh intervals, retry attempts and cooldowns", () => {
+    const cli = path.join(temporary, "policy-cli.mjs");
+    const calls = path.join(temporary, "policy-calls.json");
+    const mode = path.join(temporary, "policy-fail");
+    fs.writeFileSync(cli, `#!/usr/bin/env node
+import fs from "node:fs";
+const provider = process.argv[process.argv.indexOf("--provider") + 1];
+const file = ${JSON.stringify(calls)};
+const counts = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)) : {};
+counts[provider] = (counts[provider] || 0) + 1;
+fs.writeFileSync(file, JSON.stringify(counts));
+console.log(JSON.stringify([{provider, source: "api", ...(fs.existsSync(${JSON.stringify(mode)})
+  ? {error: {message: "HTTP 503 Service Unavailable"}}
+  : {usage: {primary: {usedPercent: 20, windowMinutes: 300}}})}]));
+`, {mode: 0o700});
+    const configs = [{...Settings.newProvider("openai"), refreshIntervalSeconds: 60, providerRetryAttempts: 1, failureCooldownSeconds: 30},
+      {...Settings.newProvider("gemini"), refreshIntervalSeconds: 600, providerRetryAttempts: 3, failureCooldownSeconds: 60}];
+    const flags = ["--cli", cli, "--cache-seconds", "0", "--retry-attempts", "4"];
+    const run = extra => {
+      const result = helper(configs, flags.concat(extra || []));
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    run(); run();
+    assert.deepEqual(JSON.parse(fs.readFileSync(calls)), {openai: 1, gemini: 1});
+    const cache = path.join(env.XDG_CACHE_HOME, "codexbar-plasmoid/provider-cache");
+    for (const file of fs.readdirSync(cache).filter(name => name.startsWith("pond-usage-") && !name.includes(".state."))) {
+      const full = path.join(cache, file); const value = JSON.parse(fs.readFileSync(full));
+      value.storedAt = Date.now() - 120000; fs.writeFileSync(full, JSON.stringify(value));
+    }
+    run();
+    assert.deepEqual(JSON.parse(fs.readFileSync(calls)), {openai: 2, gemini: 1});
+    run(["--force", "true"]);
+    assert.deepEqual(JSON.parse(fs.readFileSync(calls)), {openai: 3, gemini: 2});
+    fs.writeFileSync(mode, "fail");
+    const stale = run(["--force", "true"]);
+    assert.ok(stale.entries.every(entry => entry.stale));
+    assert.deepEqual(JSON.parse(fs.readFileSync(calls)), {openai: 4, gemini: 5});
+    const states = fs.readdirSync(cache).filter(name => name.startsWith("pond-usage-") && name.includes(".state."))
+      .map(name => JSON.parse(fs.readFileSync(path.join(cache, name))));
+    assert.ok(states.every(state => state.cooldownUntilMs - state.lastAttemptAt <= 30000));
+    run(["--force", "true"]);
+    assert.deepEqual(JSON.parse(fs.readFileSync(calls)), {openai: 5, gemini: 8});
+    const capped = fs.readdirSync(cache).filter(name => name.startsWith("pond-usage-") && name.includes(".state."))
+      .map(name => JSON.parse(fs.readFileSync(path.join(cache, name))))
+      .map(state => state.cooldownUntilMs - state.lastAttemptAt).sort((a, b) => a - b);
+    assert.deepEqual(capped, [30000, 60000]);
+    run();
+    assert.deepEqual(JSON.parse(fs.readFileSync(calls)), {openai: 5, gemini: 8});
+    fs.unlinkSync(mode);
+    // An inherited interval must still apply when the shell polls for a faster provider.
+    const inherited = [{...Settings.newProvider("openai"), providerRetryAttempts: 1},
+      {...Settings.newProvider("gemini"), refreshIntervalSeconds: 60}];
+    for (let index = 0; index < 2; index++) {
+      const result = helper(inherited, flags.concat(["--refresh-interval-seconds", "600"]));
+      assert.equal(result.status, 0, result.stderr);
+    }
+    const before = JSON.parse(fs.readFileSync(calls));
+    for (const file of fs.readdirSync(cache).filter(name => name.startsWith("pond-usage-") && !name.includes(".state."))) {
+      const full = path.join(cache, file); const value = JSON.parse(fs.readFileSync(full));
+      value.storedAt = Date.now() - 120000; fs.writeFileSync(full, JSON.stringify(value));
+    }
+    const result = helper(inherited, flags.concat(["--refresh-interval-seconds", "600"]));
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(fs.readFileSync(calls)), {...before, gemini: before.gemini + 1});
+  });
   test("nested rings fit the center with equal or decreasing widths and no overlap", () => {
     assert.equal(RingLayout.diameter({}), 28);
     assert.equal(RingLayout.diameter({ringLayout: "nested"}), 40);
@@ -89,10 +189,13 @@ try {
   test("settings save atomically with private permissions and retain unknown keys", () => {
     fs.mkdirSync(path.dirname(file), {recursive: true});
     fs.writeFileSync(file, JSON.stringify({otherClient: {value: 7}}));
-    const result = save({patch: {providerConfigs: [Object.assign(Settings.newProvider("openai"), {apiKey: "test-key"})]}, base: {otherClient: {value: 7}}});
+    const result = save({patch: {providerConfigs: [Object.assign(Settings.newProvider("openai"), {apiKey: "test-key", refreshIntervalSeconds: 600, providerRetryAttempts: 3, failureCooldownSeconds: 60})]}, base: {otherClient: {value: 7}}});
     assert.equal(result.result.ok, true);
     assert.equal(fs.statSync(file).mode & 0o777, 0o600);
     assert.equal(JSON.parse(fs.readFileSync(file)).otherClient.value, 7);
+    assert.equal(JSON.parse(fs.readFileSync(file)).providerConfigs[0].refreshIntervalSeconds, 600);
+    assert.equal(JSON.parse(fs.readFileSync(file)).providerConfigs[0].providerRetryAttempts, 3);
+    assert.equal(JSON.parse(fs.readFileSync(file)).providerConfigs[0].failureCooldownSeconds, 60);
     assert.deepEqual(fs.readdirSync(path.dirname(file)), ["config.json"]);
     assert.ok(!JSON.stringify(result).includes("test-key"));
   });

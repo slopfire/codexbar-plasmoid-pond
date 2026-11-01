@@ -44,6 +44,8 @@ const autoUpdate = args.autoUpdate === "true" || args["auto-update"] === "true";
 const updateTag = clean(args.tag) || "latest";
 const managedCliBinary = managedBinary();
 const sharedCacheSeconds = Math.max(0, Number(args.cacheSeconds || args["cache-seconds"] || 0));
+const usageRefreshSeconds = Number(args["refresh-interval-seconds"]) > 0
+  ? boundedNumber(args["refresh-interval-seconds"], 150, 60, 86400) : sharedCacheSeconds;
 const costCacheArg = args.costCacheSeconds ?? args["cost-cache-seconds"];
 const costCacheSeconds = Math.max(0, Number(
   costCacheArg === undefined ? sharedCacheSeconds : costCacheArg,
@@ -390,11 +392,11 @@ function parseArgs(rawArgs) {
 function runUsage() {
   const configs = effectiveProviderConfigs();
   if (configs.length > 0) {
+    // OAuth supplies reset credits while retaining this provider's fetch settings.
     const items = configs
       .filter((config) => !usesRemoteSource(config))
-      .flatMap((config) => asArray(runUsageForConfig(config)));
-    // codex-cli omits free rate-limit reset credits; oauth carries them. Merge when missing.
-    return enrichCodexLimitResetCredits(items);
+      .flatMap((config) => enrichCodexLimitResetCredits(asArray(runUsageForConfig(config)), config));
+    return items;
   }
   const legacy = {
     provider,
@@ -407,7 +409,7 @@ function runUsage() {
     return [];
   }
   // codex-cli omits free rate-limit reset credits; oauth carries them. Merge when missing.
-  return enrichCodexLimitResetCredits(asArray(runUsageForConfig(legacy)));
+  return enrichCodexLimitResetCredits(asArray(runUsageForConfig(legacy)), legacy);
 }
 
 /**
@@ -415,7 +417,7 @@ function runUsage() {
  * The oauth usage payload includes usage.codexResetCredits — pull that in when
  * the primary source left it out so the widget matches `codexbar … --pretty`.
  */
-function enrichCodexLimitResetCredits(items) {
+function enrichCodexLimitResetCredits(items, config) {
   return asArray(items).map((item) => {
     if (normalizeProviderId(item?.provider) !== "codex") {
       return item;
@@ -444,13 +446,13 @@ function enrichCodexLimitResetCredits(items) {
         commandArgs.push("--status");
       }
       const command = currentCliPath();
-      const oauthPayload = sharedFetch("usage", {
+      const oauthPayload = usageFetch(config, {
         command,
         commandArgs,
         provider: "codex",
         apiKeyHash: "",
         account: "",
-      }, () => fetchUsageWithRetry(command, commandArgs, "codex", "", ""));
+      }, () => fetchUsageWithRetry(command, commandArgs, "codex", "", "", config.providerRetryAttempts));
       const oauthItems = asArray(oauthPayload).filter((candidate) => (
         normalizeProviderId(candidate?.provider) === "codex" && !candidate?.error
       ));
@@ -564,7 +566,7 @@ function runUsageForSource(config, source) {
 
   const command = commandForConfig(config, source);
   try {
-    return sharedFetch("usage", {
+    return usageFetch(config, {
       command,
       commandArgs,
       provider: normalizeProviderId(config.provider),
@@ -572,7 +574,7 @@ function runUsageForSource(config, source) {
       account: clean(config.account),
     }, () => {
       try {
-        return fetchUsageWithRetry(command, commandArgs, config.provider, config.apiKey, clean(config.account));
+        return fetchUsageWithRetry(command, commandArgs, config.provider, config.apiKey, clean(config.account), config.providerRetryAttempts);
       } catch (error) {
         return [usageErrorEntry(config, source, command, error)];
       }
@@ -582,15 +584,27 @@ function runUsageForSource(config, source) {
   }
 }
 
+function usageFetch(config, identity, producer) {
+  const cacheSeconds = config.refreshIntervalSeconds || usageRefreshSeconds
+    || (config.failureCooldownSeconds ? 1 : 0);
+  const cooldown = config.failureCooldownSeconds ? config.failureCooldownSeconds * 1000 : cooldownCapMs;
+  // Explicit provider intervals need a local cache even when cross-widget sharing is off.
+  const namespace = sharedCacheSeconds > 0 ? "usage" : "pond-usage";
+  const cacheIdentity = {...identity};
+  if (config.providerRetryAttempts && config.providerRetryAttempts !== retryAttempts)
+    cacheIdentity.retryAttempts = config.providerRetryAttempts;
+  if (cooldown !== cooldownCapMs) cacheIdentity.cooldownCapMs = cooldown;
+  return sharedFetch(namespace, cacheIdentity, producer, cacheSeconds, {cooldownCapMs: cooldown});
+}
+
 /**
- * One CLI invocation, retried once when it fails transiently. A timeout burns
- * the whole attempt budget, so only a call that failed early — a busy Codex
- * app-server socket, a 429, a reset connection — is re-run.
+ * Retry temporary failures within the configured attempt and time limits.
+ * A timeout consumes the time limit and prevents further attempts.
  */
-function fetchUsageWithRetry(command, commandArgs, providerId, apiKey, account) {
+function fetchUsageWithRetry(command, commandArgs, providerId, apiKey, account, attempts = retryAttempts) {
   const outcome = runWithRetries(
     () => runJSON(command, commandArgs, providerId, apiKey, account),
-    { attempts: retryAttempts, timeoutMs: execTimeoutMs, startedAt: Date.now() },
+    { attempts, timeoutMs: execTimeoutMs, startedAt: Date.now() },
   );
   if (outcome.error) {
     throw outcome.error;
@@ -2271,7 +2285,7 @@ function providerLabels(providerId) {
       // windows do not identify models, so avoid inventing model names here.
       return { session: "Limit 1", weekly: "Limit 2", tertiary: "Limit 3" };
     case "opencode":
-      return { session: "Rolling Usage", weekly: "Weekly Usage", tertiary: "Extra" };
+      return { session: "Rolling Usage", weekly: "Weekly Usage", tertiary: "Monthly Usage" };
     case "opencodego":
       return { session: "Rolling Usage", weekly: "Weekly Usage", tertiary: "Monthly Usage" };
     case "devin":
@@ -2320,6 +2334,11 @@ function parseProviderConfigs(raw) {
       apiKey: providersFromStdin ? clean(item.apiKey) : "",
       // Default on: users opt out per provider when they do not want spend stats.
       includeCost: item.includeCost !== false,
+      refreshIntervalSeconds: Number(item.refreshIntervalSeconds) > 0
+        ? boundedNumber(item.refreshIntervalSeconds, 150, 60, 86400) : 0,
+      providerRetryAttempts: boundedNumber(item.providerRetryAttempts, retryAttempts, 1, 4),
+      failureCooldownSeconds: Number(item.failureCooldownSeconds) > 0
+        ? boundedNumber(item.failureCooldownSeconds, 180, 30, 3600) : 0,
       _fromConfigs: true,
     }));
 }

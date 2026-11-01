@@ -465,6 +465,12 @@ export function sources(provider) {
     .map(value => ({value, label: provider === "claude" && value === "api" ? "Admin API key" : provider === "bedrock" && value === "api" ? "AWS credentials" : ({auto: "Automatic", cli: "CLI account", oauth: "OAuth account",
       native: "Linux helper", "native-auth": "Browser login", api: "API key", web: "Web account", local: "Local demo"})[value] || value}));
 }
+export function refreshInterval(settings, detected) {
+  const fallback = Number(settings.refreshIntervalSeconds) || 150;
+  const intervals = providerRows(settings, detected).filter(row => row.enabled !== false)
+    .map(row => Number(row.refreshIntervalSeconds) || fallback);
+  return intervals.length ? Math.min(...intervals) : fallback;
+}
 export function validate(patch) {
   if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new Error("Invalid settings");
   for (const [key, min, max] of [["refreshIntervalSeconds",60,86400],["timeoutSeconds",5,300],
@@ -490,6 +496,12 @@ export function validate(patch) {
       const item = catalog.find(item => item.id === row.provider);
       if (!item) throw new Error("Remove the unknown provider: " + String(row.provider || ""));
       if (!item.sources.includes(row.source)) throw new Error("Choose a source for " + item.name);
+      for (const [key, min, max] of [["refreshIntervalSeconds", 60, 86400],
+        ["providerRetryAttempts", 1, 4], ["failureCooldownSeconds", 30, 3600]]) {
+        const value = row[key];
+        if (value !== undefined && value !== 0 && (!Number.isInteger(value) || value < min || value > max))
+          throw new Error("Check " + key + " for " + item.name);
+      }
       if (!Number.isInteger(Number(row.accountIndex || 0)) || Number(row.accountIndex || 0) < 0)
         throw new Error("Check the account index for " + item.name);
     }
