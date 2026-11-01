@@ -67,6 +67,40 @@ try {
       for (const value of [0, "false", null]) assert.throws(() => Settings.validate({[key]: value}));
     }
   });
+  test("provider appearance inherits defaults and keeps overrides separate", () => {
+    const settings = {ringWidth: 2, ringGap: 1, showProviderIcon: true,
+      providerAppearance: {codex: {ringWidth: 5, ringGap: 0, showProviderIcon: false}}};
+    assert.deepEqual(Settings.appearance(settings, "codex"), {ringWidth: 5, ringGap: 0, showProviderIcon: false});
+    assert.equal(Settings.appearance(settings, "claude").ringWidth, 2);
+    settings.ringWidth = 3;
+    assert.equal(Settings.appearance(settings, "claude").ringWidth, 3);
+    assert.equal(Settings.appearance(settings, "codex").ringWidth, 5);
+    Settings.appearance(settings, "codex").ringWidth = 1;
+    assert.equal(settings.providerAppearance.codex.ringWidth, 5);
+    delete settings.providerAppearance.codex;
+    assert.deepEqual(Settings.appearance(settings, "codex"), Settings.appearance(settings, "claude"));
+    for (const [configured, reported] of [["alibaba-coding-plan", "alibaba"], ["groqcloud", "groq"],
+      ["abacusai", "abacus"], ["azure-openai", "azureopenai"]]) {
+      settings.providerAppearance = {[configured]: {ringWidth: 5}};
+      assert.equal(Settings.appearance(settings, reported).ringWidth, 5);
+    }
+  });
+  test("provider appearance accepts only valid appearance fields", () => {
+    const values = {cardBars: 6, ringSize: 44, ringWidth: 5, ringGap: 0, ringLayout: "nested",
+      nestedRingWidth: "decreasing", showProviderIcon: false, showProviderName: false,
+      showRingValues: false, showWindowLabels: false, showRingTrack: false, paceIndicatorStyle: "off"};
+    Settings.validate({providerAppearance: {codex: values, claude: {}}});
+    for (const invalid of [null, [], "nested", {unknown: {}}, {codex: null}, {codex: []},
+      {codex: {ringWidth: 0}}, {codex: {ringGap: 5}}, {codex: {ringSize: 23}}, {codex: {cardBars: 7}},
+      {codex: {showProviderIcon: "false"}}, {codex: {ringLayout: "invalid"}},
+      {codex: {paceIndicatorStyle: "invalid"}}, {codex: {cliPath: "/tmp/cli"}}])
+      assert.throws(() => Settings.validate({providerAppearance: invalid}));
+    const result = save({patch: {providerAppearance: {codex: values}}});
+    assert.equal(result.result.ok, true);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file)).providerAppearance.codex, values);
+    assert.equal(save({patch: {providerAppearance: {}}}).result.ok, true);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file)).providerAppearance, {});
+  });
   test("provider refresh and retry overrides validate and inherit global values", () => {
     for (const [key, min, max] of [["refreshIntervalSeconds", 60, 86400],
       ["providerRetryAttempts", 1, 4], ["failureCooldownSeconds", 30, 3600]]) {

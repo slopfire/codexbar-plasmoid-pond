@@ -68,6 +68,13 @@ button opens these pages:
 - Providers has add, enable, disable, remove and reorder controls. Choose the active account, all accounts, or a selected list. Detect accounts, then check the names to show. You can add names by hand. Add another account profile for a separate API key or source. A new profile starts without a copied key. Antigravity can show several saved browser logins and sign out one selected login after confirmation. Devin has an organization field. Bedrock uses existing AWS credentials.
 - Appearance sets sidebar rows, rings per provider, the initial layout and the history chart. Choose separate or nested rings. Nested rings put the shortest window on the outside and work in provider rows, compact tiles and the collapsed rail. Inner rings can keep the same width or become thinner. Ring size, width and gap have controls. Widths and gaps scale down when needed to fit all rings. Icons, provider names, values, window labels and ring tracks have separate visibility controls. Hover and keyboard focus retain the usage details when text is hidden. Circular pace markers can use time, usage, provider or theme colors. They can also show a gap alone or be hidden.
 
+In Appearance, select a provider to change its rings, visibility controls or
+pace markers. Values you do not change use the defaults for all providers.
+Changes apply to all accounts of the selected provider. Select **Use defaults
+for this provider** to remove its changes. The provider editor also has a
+button that opens these controls. Sidebar row count, initial layout and the
+history chart apply to all providers.
+
 Provider details show status descriptions and links, reset-credit expiry,
 partial refresh errors and incomplete-history notes. The daily chart uses
 spend when available, or tokens for a token-only series. Hover, click or focus

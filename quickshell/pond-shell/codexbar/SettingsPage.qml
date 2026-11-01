@@ -18,6 +18,10 @@ Item {
   }
   property int tab: 0
   property int editing: -1
+  property string appearanceProvider: ""
+  readonly property var appearance: Settings.appearance(draft, appearanceProvider)
+  readonly property var appearanceOptions: [{value: "", label: "All providers (defaults)"}].concat(
+    [...new Set(providers.map(row => row.provider))].map(id => ({value: id, label: Model.providerName(id)})))
   readonly property string accountMode: Accounts.mode(config)
   property string pendingLogout: ""
   property var base: Settings.clone(pageState.settings || {})
@@ -31,6 +35,17 @@ Item {
   implicitHeight: 580
 
   function patch(key, value) { const next = Object.assign({}, draft); next[key] = value; draft = next; }
+  function patchAppearance(key, value) {
+    if (!appearanceProvider) { patch(key, value); return; }
+    const overrides = Settings.clone(draft.providerAppearance || {});
+    overrides[appearanceProvider] = Object.assign({}, overrides[appearanceProvider] || {}, {[key]: value});
+    patch("providerAppearance", overrides);
+  }
+  function resetAppearance() {
+    const overrides = Settings.clone(draft.providerAppearance || {});
+    delete overrides[appearanceProvider];
+    patch("providerAppearance", overrides);
+  }
   function updateProvider(key, value) {
     if (editing < 0 || !providers[editing]) return;
     const rows = Settings.clone(providers);
@@ -89,7 +104,7 @@ Item {
     for (const key of ["provider", "providerConfigs", "cliPath", "refreshIntervalSeconds", "timeoutSeconds",
       "autoUpdateCli", "cost", "credits", "anonymizeEmail", "cardBars", "expandedRows", "expanded", "history", "includeStatus",
       "costRefreshIntervalSeconds", "shareProviderFetches", "providerRetryAttempts", "failureCooldownSeconds",
-      "costScanTimeoutSeconds", "paceIndicatorStyle", "ringLayout", "nestedRingWidth", "ringSize", "ringWidth", "ringGap",
+      "costScanTimeoutSeconds", "providerAppearance", "paceIndicatorStyle", "ringLayout", "nestedRingWidth", "ringSize", "ringWidth", "ringGap",
       "showProviderIcon", "showProviderName", "showRingValues", "showWindowLabels", "showRingTrack"])
       if (draft[key] !== undefined) update[key] = draft[key];
     try { Settings.validate(update); }
@@ -186,53 +201,77 @@ Item {
       Column {
         width: parent.width; spacing: 12
         visible: root.tab === 2 && root.editing < 0
-        SettingNumber { width: parent.width; text: "Sidebar provider rows"; minimum: 0; maximum: 8; value: root.draft.expandedRows === undefined ? 3 : root.draft.expandedRows; onChanged: value => root.patch("expandedRows", value) }
-        Text { width: parent.width; text: "0 shows all providers. Extra providers appear as a count."; color: "white"; opacity: 0.5; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+        Text { text: "Provider appearance"; color: "white"; opacity: 0.6; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+        SettingChoice {
+          objectName: "appearanceProvider"
+          width: parent.width
+          value: root.appearanceProvider
+          options: root.appearanceOptions
+          Accessible.name: "Provider appearance"
+          onPicked: value => { root.appearanceProvider = value; viewport.contentY = 0; }
+        }
+        Text {
+          width: parent.width
+          text: root.appearanceProvider ? "Unchanged values use the defaults. Changes apply to all accounts of this provider."
+            : "These defaults apply unless a provider has its own value."
+          color: "white"; opacity: 0.5; wrapMode: Text.Wrap
+          font.family: Shell.Theme.fontFamily; font.pixelSize: 11
+        }
+        ActionButton {
+          objectName: "resetProviderAppearance"
+          visible: root.appearanceProvider !== ""
+          width: parent.width; text: "Use defaults for this provider"
+          interactive: !!root.draft.providerAppearance?.[root.appearanceProvider]
+          onClicked: root.resetAppearance()
+        }
         Text { text: "Ring layout"; color: "white"; opacity: 0.6; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
         SettingChoice {
           width: parent.width
-          value: root.draft.ringLayout || "separate"
+          value: root.appearance.ringLayout || "separate"
           options: [{value: "separate", label: "Separate rings"}, {value: "nested", label: "Nested rings"}]
           Accessible.name: "Ring layout"
-          onPicked: value => root.patch("ringLayout", value)
+          onPicked: value => root.patchAppearance("ringLayout", value)
         }
         SettingChoice {
           width: parent.width
-          visible: root.draft.ringLayout === "nested"
-          value: root.draft.nestedRingWidth || "equal"
+          visible: root.appearance.ringLayout === "nested"
+          value: root.appearance.nestedRingWidth || "equal"
           options: [{value: "equal", label: "Equal ring widths"}, {value: "decreasing", label: "Thinner inner rings"}]
           Accessible.name: "Nested ring width"
-          onPicked: value => root.patch("nestedRingWidth", value)
+          onPicked: value => root.patchAppearance("nestedRingWidth", value)
         }
-        SettingNumber { width: parent.width; text: "Ring size, pixels"; minimum: 24; maximum: 44; step: 2; value: root.draft.ringSize || (root.draft.ringLayout === "nested" ? 40 : 28); onChanged: value => root.patch("ringSize", value) }
-        SettingNumber { width: parent.width; text: "Ring width, pixels"; minimum: 1; maximum: 5; value: root.draft.ringWidth || 2; onChanged: value => root.patch("ringWidth", value) }
-        SettingNumber { width: parent.width; visible: root.draft.ringLayout === "nested"; text: "Ring gap, pixels"; minimum: 0; maximum: 4; value: root.draft.ringGap === undefined ? 1 : root.draft.ringGap; onChanged: value => root.patch("ringGap", value) }
-        Text { width: parent.width; visible: root.draft.ringLayout === "nested"; text: "The shortest window is the outer ring. Widths and gaps scale down when needed to fit all rings."; color: "white"; opacity: 0.5; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
-        SettingToggle { width: parent.width; text: "Show provider icons"; checked: root.draft.showProviderIcon !== false; onToggled: value => root.patch("showProviderIcon", value) }
-        SettingToggle { width: parent.width; text: "Show provider names"; checked: root.draft.showProviderName !== false; onToggled: value => root.patch("showProviderName", value) }
-        SettingToggle { width: parent.width; text: "Show ring values"; checked: root.draft.showRingValues !== false; onToggled: value => root.patch("showRingValues", value) }
-        SettingToggle { width: parent.width; text: "Show window labels"; checked: root.draft.showWindowLabels !== false; onToggled: value => root.patch("showWindowLabels", value) }
-        SettingToggle { width: parent.width; text: "Show ring tracks"; checked: root.draft.showRingTrack !== false; onToggled: value => root.patch("showRingTrack", value) }
-        SettingNumber { width: parent.width; text: "Rings per provider"; minimum: 1; maximum: 6; value: root.draft.cardBars || 2; onChanged: value => root.patch("cardBars", value) }
-        SettingToggle { width: parent.width; text: "Start with provider rows"; checked: root.draft.expanded !== false; onToggled: value => root.patch("expanded", value) }
-        SettingToggle { width: parent.width; text: "Show daily spend chart"; checked: root.draft.history !== false; onToggled: value => root.patch("history", value) }
+        SettingNumber { width: parent.width; text: "Ring size, pixels"; minimum: 24; maximum: 44; step: 2; value: root.appearance.ringSize || (root.appearance.ringLayout === "nested" ? 40 : 28); onChanged: value => root.patchAppearance("ringSize", value) }
+        SettingNumber { objectName: "appearanceRingWidth"; width: parent.width; text: "Ring width, pixels"; minimum: 1; maximum: 5; value: root.appearance.ringWidth || 2; onChanged: value => root.patchAppearance("ringWidth", value) }
+        SettingNumber { width: parent.width; visible: root.appearance.ringLayout === "nested"; text: "Ring gap, pixels"; minimum: 0; maximum: 4; value: root.appearance.ringGap === undefined ? 1 : root.appearance.ringGap; onChanged: value => root.patchAppearance("ringGap", value) }
+        Text { width: parent.width; visible: root.appearance.ringLayout === "nested"; text: "The shortest window is the outer ring. Widths and gaps scale down when needed to fit all rings."; color: "white"; opacity: 0.5; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+        SettingToggle { width: parent.width; text: "Show provider icons"; checked: root.appearance.showProviderIcon !== false; onToggled: value => root.patchAppearance("showProviderIcon", value) }
+        SettingToggle { width: parent.width; text: "Show provider names"; checked: root.appearance.showProviderName !== false; onToggled: value => root.patchAppearance("showProviderName", value) }
+        SettingToggle { width: parent.width; text: "Show ring values"; checked: root.appearance.showRingValues !== false; onToggled: value => root.patchAppearance("showRingValues", value) }
+        SettingToggle { width: parent.width; text: "Show window labels"; checked: root.appearance.showWindowLabels !== false; onToggled: value => root.patchAppearance("showWindowLabels", value) }
+        SettingToggle { width: parent.width; text: "Show ring tracks"; checked: root.appearance.showRingTrack !== false; onToggled: value => root.patchAppearance("showRingTrack", value) }
+        SettingNumber { width: parent.width; text: "Rings per provider"; minimum: 1; maximum: 6; value: root.appearance.cardBars || 2; onChanged: value => root.patchAppearance("cardBars", value) }
         Text { text: "Circular pace marker"; color: "white"; opacity: 0.6; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
         SettingChoice {
           width: parent.width
-          value: root.draft.paceIndicatorStyle || "position"
+          value: root.appearance.paceIndicatorStyle || "position"
           options: [{value: "position", label: "Time remaining color"}, {value: "bar", label: "Usage color"},
             {value: "provider", label: "Provider color"}, {value: "theme", label: "Theme text color"},
             {value: "gaps", label: "Gap only"}, {value: "off", label: "Hidden"}]
           Accessible.name: "Pace marker style"
-          onPicked: value => root.patch("paceIndicatorStyle", value)
+          onPicked: value => root.patchAppearance("paceIndicatorStyle", value)
         }
         Text { width: parent.width; text: "The arc shows budget left. The tick shows time left. An arc past the tick has reserve."; color: "white"; opacity: 0.5; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+        Text { text: "Sidebar layout"; color: "white"; opacity: 0.6; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+        SettingNumber { width: parent.width; text: "Sidebar provider rows"; minimum: 0; maximum: 8; value: root.draft.expandedRows === undefined ? 3 : root.draft.expandedRows; onChanged: value => root.patch("expandedRows", value) }
+        Text { width: parent.width; text: "0 shows all providers. Extra providers appear as a count."; color: "white"; opacity: 0.5; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+        SettingToggle { width: parent.width; text: "Start with provider rows"; checked: root.draft.expanded !== false; onToggled: value => root.patch("expanded", value) }
+        SettingToggle { width: parent.width; text: "Show daily spend chart"; checked: root.draft.history !== false; onToggled: value => root.patch("history", value) }
         Text { width: parent.width; text: "Colors and fonts follow the Pond theme."; color: "white"; opacity: 0.5; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
       }
       Column {
         width: parent.width; spacing: 10
         visible: root.tab === 1 && root.editing < 0
-        Text { width: parent.width; text: "Enable the providers you use. Select a row to set its source and account."; color: "white"; opacity: 0.6; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+        Text { width: parent.width; text: "Enable the providers you use. Select a row to set its source, account and appearance."; color: "white"; opacity: 0.6; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
         Repeater {
           model: root.providers
           delegate: Rectangle {
@@ -275,6 +314,10 @@ Item {
       Column {
         width: parent.width; spacing: 10
         visible: root.editing >= 0
+        ActionButton {
+          width: parent.width; text: "Provider appearance"
+          onClicked: { root.appearanceProvider = root.config.provider; root.editing = -1; root.tab = 2; viewport.contentY = 0; }
+        }
         SettingToggle { width: parent.width; text: "Enabled"; checked: root.config?.enabled !== false; onToggled: value => root.updateProvider("enabled", value) }
         Text { text: "Source"; color: "white"; opacity: 0.6; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
         SettingChoice { objectName: "providerSource"; width: parent.width; options: Settings.sources(root.config?.provider); value: root.config?.source || "auto"; onPicked: value => root.updateProvider("source", value) }

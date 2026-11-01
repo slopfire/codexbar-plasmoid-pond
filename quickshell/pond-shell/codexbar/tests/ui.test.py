@@ -97,6 +97,33 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
       usage.entries = [Object.assign({}, root.reference[0], {id: "home", account: "home@example.com", accountSelection: true}),
         Object.assign({}, root.reference[0], {id: "work", account: "work@example.com", accountSelection: true})];
     }
+    function configureAppearance(provider: string, width: int, reset: bool): string {
+      let result = {};
+      function walk(node) {
+        if ("appearanceProvider" in node && "draft" in node) {
+          function control(item, name) {
+            if (item.objectName === name) return item;
+            for (const child of item.children || []) {
+              const found = control(child, name);
+              if (found) return found;
+            }
+            return null;
+          }
+          node.editing = -1;
+          node.tab = 2;
+          control(node, "appearanceProvider").picked(provider);
+          if (reset) control(node, "resetProviderAppearance").clicked();
+          else control(node, "appearanceRingWidth").changed(width);
+          result = {provider: node.appearanceProvider, width: node.appearance.ringWidth,
+            overrides: node.draft.providerAppearance || {}, globalWidth: node.draft.ringWidth};
+          return true;
+        }
+        for (const child of node.children || []) if (walk(child)) return true;
+        return false;
+      }
+      walk(drawer);
+      return JSON.stringify(result);
+    }
     function configureProvider() {
       function walk(node) {
         if (node.objectName.startsWith("provider") && "toggled" in node) node.toggled(true);
@@ -202,6 +229,27 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
                 assert not any(item["visible"] for item in tree if item.get("sidebarIcon")), tree
                 rings = [item for item in tree if item.get("ring") and item["visible"]]
                 assert len(rings) == 6 and all(item["extent"] == 0 and item["track"] == "#00000000" for item in rings), rings
+            call("appearance", json.dumps({"providerAppearance": {
+                "codex": {"ringWidth": 1, "ringGap": 0, "paceIndicatorStyle": "off"},
+                "claude": {"ringLayout": "separate", "ringSize": 44, "ringWidth": 5}}}))
+            report = wait_for(lambda report: any(item.get("ring") and item["visible"] and item["provider"] == "claude"
+                and item["size"] == 44 and item["stroke"] == 5 for item in report["tree"]))
+            for tree in [report["tree"], report["railTree"]]:
+                rings = [item for item in tree if item.get("ring") and item["visible"]]
+                for provider, width in [("codex", 1), ("claude", 5), ("gemini", 3)]:
+                    selected = [item for item in rings if item["provider"] == provider]
+                    assert selected and all(item["stroke"] == width for item in selected), selected
+                assert all(item["style"] == "off" for item in rings if item["provider"] == "codex"), rings
+                assert {item["provider"] for item in tree if item.get("stack") and item["visible"]} == {"codex", "gemini"}, tree
+            call("collapse", 1)
+            report = wait_for(lambda report: any(item.get("ring") and item["visible"] and item["provider"] == "claude"
+                and item["size"] == 44 and item["stroke"] == 5 for item in report["tree"]))
+            assert all(item["style"] == "off" for item in report["tree"] if item.get("ring") and item["visible"] and item["provider"] == "codex"), report
+            call("collapse", 0)
+            call("appearance", json.dumps({"providerAppearance": {}}))
+            report = wait_for(lambda report: len([item for item in report["tree"] if item.get("stack") and item["visible"]]) == 3)
+            assert all(item["stroke"] == 3 for item in report["tree"] if item.get("ring") and item["visible"]), report
+            print("ok - provider appearance overrides stay separate in rows and rails and reset to defaults")
             call("appearance", json.dumps({"nestedRingWidth": "decreasing"}))
             report = wait_for(lambda report: all(item["geometry"][0]["stroke"] > item["geometry"][1]["stroke"]
                 for item in report["tree"] if item.get("stack") and item["visible"]))
@@ -269,6 +317,14 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
             call("configureProvider")
             call("settingsTab", 0)
             call("configureFetch")
+            appearance = json.loads(call("configureAppearance", "codex", 5, "false"))
+            assert appearance == {"provider": "codex", "width": 5, "overrides": {"codex": {"ringWidth": 5}}, "globalWidth": 3}, appearance
+            if os.environ.get("CODEXBAR_APPEARANCE_SCREENSHOT"):
+                subprocess.run(["virt-shot", "--out", os.environ["CODEXBAR_APPEARANCE_SCREENSHOT"]], env=env, check=True, capture_output=True)
+            appearance = json.loads(call("configureAppearance", "claude", 1, "false"))
+            assert appearance["overrides"] == {"codex": {"ringWidth": 5}, "claude": {"ringWidth": 1}}, appearance
+            appearance = json.loads(call("configureAppearance", "codex", 0, "true"))
+            assert appearance["width"] == 3 and appearance["overrides"] == {"claude": {"ringWidth": 1}}, appearance
             call("applySettings")
             report = wait_for(lambda report: report["page"] == "drawer" and not report["transitioning"])
             expected = {"includeStatus": False, "shareProviderFetches": False, "costRefreshIntervalSeconds": 7200,
@@ -277,6 +333,8 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
                         "ringSize": 40, "ringWidth": 3, "ringGap": 2, "showProviderIcon": False,
                         "showProviderName": False, "showRingValues": False, "showWindowLabels": False, "showRingTrack": False}
             assert all(report["settings"].get(key) == value for key, value in expected.items()), report
+            assert report["settings"]["providerAppearance"] == {"claude": {"ringWidth": 1}}, report
+            print("ok - provider selector, ring width and default reset controls save separate appearance settings")
             provider = report["settings"]["providerConfigs"][2]
             assert provider["refreshIntervalSeconds"] == 600 and provider["providerRetryAttempts"] == 4 and provider["failureCooldownSeconds"] == 60, provider
             assert sorted(report["settings"]["providerConfigs"][0]["accounts"]) == ["home@example.com", "work@example.com"], report

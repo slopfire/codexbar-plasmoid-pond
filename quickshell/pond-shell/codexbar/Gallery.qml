@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import "CodexBarModel.mjs" as Model
 import "RingLayout.mjs" as RingLayout
+import "CodexBarSettings.mjs" as Settings
 import ".." as Shell
 
 Item {
@@ -15,12 +16,12 @@ Item {
   signal tileClicked(var entry)
 
   readonly property var settings: state.settings || ({})
-  readonly property bool nested: settings.ringLayout === "nested"
-  readonly property real ringSize: RingLayout.diameter(settings)
   readonly property bool compact: collapseProgress >= 0.56
-  readonly property var tiles: (state.ordered || []).map(entry => ({
-    entry, rings: root.nested ? Model.sidebarRings(entry, root.bars) : Model.rings(entry, 1), error: Model.isErrorOnly(entry)
-  }))
+  readonly property var tiles: (state.ordered || []).map(entry => {
+    const appearance = Settings.appearance(settings, entry.provider);
+    return {entry, settings: appearance, rings: appearance.ringLayout === "nested"
+      ? Model.sidebarRings(entry, appearance.cardBars || root.bars) : Model.rings(entry, 1), error: Model.isErrorOnly(entry)};
+  })
   readonly property int expandedCapacity: Math.max(1, maxTiles)
   readonly property int compactCapacity: 3
   readonly property int capacity: compact ? compactCapacity : expandedCapacity
@@ -29,8 +30,8 @@ Item {
   readonly property int cellCount: shownCount + (hiddenCount > 0 ? 1 : 0)
   readonly property int columns: compact ? 1 : 2
   readonly property real cellWidth: Math.max(0, (width - 12) / columns)
-  readonly property int tileHeight: Math.max(36, ringSize + 8)
-  readonly property int namedHeight: tileHeight + (settings.showProviderName !== false ? 18 : 0)
+  readonly property int tileHeight: Math.max(36, ...tiles.map(tile => RingLayout.diameter(tile.settings) + 8))
+  readonly property int namedHeight: tileHeight + (tiles.some(tile => tile.settings.showProviderName !== false) ? 18 : 0)
   readonly property int cellHeight: compact ? tileHeight : namedHeight
   readonly property int expandedHeight: Math.ceil(Math.min(tiles.length, expandedCapacity) / 2) * namedHeight + 8
   readonly property int compactHeight: Math.min(tiles.length, compactCapacity) * tileHeight + 12
@@ -53,8 +54,8 @@ Item {
         compact: root.compact
         theme: root.theme
         nowMs: root.state.nowMs
-        settings: root.settings
-        markerStyle: root.state.settings?.paceIndicatorStyle || "position"
+        settings: tile?.settings || ({})
+        markerStyle: settings.paceIndicatorStyle || "position"
         onClicked: root.tileClicked(root.tiles[cell.index].entry)
       }
       FocusScope {

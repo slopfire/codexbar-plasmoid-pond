@@ -473,6 +473,21 @@ export function refreshInterval(settings, detected) {
     .map(row => Number(row.refreshIntervalSeconds) || fallback);
   return intervals.length ? Math.min(...intervals) : fallback;
 }
+export const appearanceKeys = ["cardBars", "ringLayout", "nestedRingWidth", "ringSize", "ringWidth", "ringGap",
+  "showProviderIcon", "showProviderName", "showRingValues", "showWindowLabels", "showRingTrack", "paceIndicatorStyle"];
+
+export function appearance(settings, provider) {
+  const id = Accounts.normalizeProvider(provider);
+  const key = catalog.find(item => Accounts.normalizeProvider(item.id) === id)?.id || provider;
+  const override = settings.providerAppearance?.[key] || {};
+  const result = {};
+  for (const key of appearanceKeys) {
+    const value = override[key] === undefined ? settings[key] : override[key];
+    if (value !== undefined) result[key] = value;
+  }
+  return result;
+}
+
 export function validate(patch) {
   if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new Error("Invalid settings");
   for (const [key, min, max] of [["refreshIntervalSeconds",60,86400],["timeoutSeconds",5,300],
@@ -492,6 +507,17 @@ export function validate(patch) {
   }
   if (patch.paceIndicatorStyle !== undefined && !["position", "bar", "provider", "theme", "gaps", "off"].includes(patch.paceIndicatorStyle))
     throw new Error("Choose a pace indicator style");
+  if (patch.providerAppearance !== undefined) {
+    const overrides = patch.providerAppearance;
+    if (!overrides || typeof overrides !== "object" || Array.isArray(overrides))
+      throw new Error("Invalid provider appearance settings");
+    for (const [provider, values] of Object.entries(overrides)) {
+      if (!catalog.some(item => item.id === provider) || !values || typeof values !== "object" || Array.isArray(values)
+        || Object.keys(values).some(key => !appearanceKeys.includes(key)))
+        throw new Error("Check appearance settings for " + provider);
+      validate(values);
+    }
+  }
   if (patch.providerConfigs !== undefined) {
     if (!Array.isArray(patch.providerConfigs)) throw new Error("Invalid provider list");
     for (const row of patch.providerConfigs) {

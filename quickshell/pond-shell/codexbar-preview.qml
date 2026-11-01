@@ -17,6 +17,13 @@ ShellRoot {
   }
   function inspect(item) {
     const out = [];
+    function providerOf(node) {
+      while (node) {
+        if (node.entry?.provider) return node.entry.provider;
+        node = node.parent;
+      }
+      return "";
+    }
     function walk(node) {
       if ("interactive" in node && "pageState" in node && !node.interactive) return;
       for (const resource of node.resources || []) {
@@ -27,10 +34,10 @@ ShellRoot {
       }
       if ("gauges" in node) out.push({gauges: node.gauges, provider: node.entry.provider,
         background: String(node.children[0].color), alpha: node.children[0].color.a});
-      if ("hasMarker" in node) out.push({ring: true, value: node.value, timeLeft: node.timeLeft,
+      if ("hasMarker" in node) out.push({ring: true, provider: providerOf(node), value: node.value, timeLeft: node.timeLeft,
         marker: node.hasMarker, style: node.markerStyle, visible: node.visible, size: node.size,
         stroke: node.stroke, track: String(node.trackColor), extent: node.markerExtent});
-      if (node.objectName === "ringStack") out.push({stack: true, visible: node.visible,
+      if (node.objectName === "ringStack") out.push({stack: true, provider: node.entry?.provider, visible: node.visible,
         geometry: node.geometry, count: node.rings.length, width: node.width, height: node.height});
       if (node.objectName === "sidebarProviderIcon") out.push({sidebarIcon: true, visible: node.visible});
       if (node.objectName === "nestedRingLabels") out.push({nestedLabels: true, visible: node.visible,
