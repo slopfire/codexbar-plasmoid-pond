@@ -73,6 +73,87 @@ pub fn fetch(http: &HttpClient, timeout: Duration, method: AntigravityMethod) ->
     }
 }
 
+/// Named accounts use their own token files and never change the active login.
+pub fn fetch_accounts(
+    http: &HttpClient,
+    timeout: Duration,
+    source: &str,
+    account: Option<&str>,
+    account_index: usize,
+    all: bool,
+) -> Vec<ProviderPayload> {
+    if account.is_none() && account_index == 0 && !all {
+        return vec![fetch(http, timeout, method_for_source(source))];
+    }
+    let mut accounts = stored_accounts(&antigravity_usage_config_dir());
+    if let Some(name) = account {
+        accounts.retain(|(email, _)| email.eq_ignore_ascii_case(name));
+    } else if account_index > 0 {
+        accounts = accounts
+            .into_iter()
+            .skip(account_index - 1)
+            .take(1)
+            .collect();
+    }
+    if accounts.is_empty() {
+        if all {
+            return vec![fetch(http, timeout, method_for_source(source))];
+        }
+        let mut payload = ProviderPayload::error(
+            "antigravity",
+            "The selected Antigravity account is not saved. Sign in again.",
+        );
+        payload.account = account.map(str::to_string);
+        return vec![payload];
+    }
+    accounts
+        .into_iter()
+        .map(|(email, path)| {
+            let result = fs::read_to_string(&path)
+                .context("Read account tokens")
+                .and_then(|raw| {
+                    serde_json::from_str::<StoredTokens>(&raw).context("Parse account tokens")
+                })
+                .and_then(|tokens| fetch_cloud_with_tokens(http, tokens, path));
+            result.unwrap_or_else(|error| {
+                let mut payload = ProviderPayload::error("antigravity", error.to_string());
+                payload.account = Some(email);
+                payload
+            })
+        })
+        .collect()
+}
+
+fn stored_accounts(config_dir: &Path) -> Vec<(String, PathBuf)> {
+    let mut accounts = Vec::new();
+    if let Ok(entries) = fs::read_dir(config_dir.join("accounts")) {
+        for entry in entries.flatten() {
+            let path = entry.path().join("tokens.json");
+            let tokens = fs::read_to_string(&path)
+                .ok()
+                .and_then(|raw| serde_json::from_str::<StoredTokens>(&raw).ok());
+            if let Some(email) = tokens
+                .and_then(|tokens| tokens.email)
+                .filter(|email| !email.trim().is_empty())
+            {
+                accounts.push((email, path));
+            }
+        }
+    }
+    let legacy_path = config_dir.join("tokens.json");
+    if let Some(tokens) = fs::read_to_string(&legacy_path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<StoredTokens>(&raw).ok())
+    {
+        if let Some(email) = tokens.email.filter(|email| !email.trim().is_empty()) {
+            accounts.push((email, legacy_path));
+        }
+    }
+    accounts.sort_by_key(|(email, _)| email.to_lowercase());
+    accounts.dedup_by(|a, b| a.0.eq_ignore_ascii_case(&b.0));
+    accounts
+}
+
 /// Outcome of a local IDE probe, distinguishing fresh data from a cached
 /// fallback so the Auto method can decide whether to try Cloud Code.
 enum LocalOutcome {
@@ -1528,7 +1609,17 @@ fn quotas_from_models(models: serde_json::Map<String, serde_json::Value>) -> Vec
 /// Fetch usage via the Google Cloud Code API using OAuth tokens from browser
 /// login or `antigravity-usage`. No running IDE is required.
 fn fetch_cloud(http: &HttpClient, _timeout: Duration) -> Result<ProviderPayload> {
-    let (mut tokens, path) = load_tokens()?;
+    let (tokens, path) = load_tokens()?;
+    let payload = fetch_cloud_with_tokens(http, tokens, path)?;
+    save_cached_payload(&payload);
+    Ok(payload)
+}
+
+fn fetch_cloud_with_tokens(
+    http: &HttpClient,
+    mut tokens: StoredTokens,
+    path: PathBuf,
+) -> Result<ProviderPayload> {
     let access_token = ensure_valid_access_token(http, &mut tokens, &path)?;
 
     let mut code_assist = load_code_assist(http, &access_token)?;
@@ -1581,7 +1672,6 @@ fn fetch_cloud(http: &HttpClient, _timeout: Duration) -> Result<ProviderPayload>
     let mut payload =
         ProviderPayload::ok("antigravity", snapshot, tokens.email.clone(), None, None);
     payload.source = "native-auth".to_string();
-    save_cached_payload(&payload);
     Ok(payload)
 }
 
@@ -1614,6 +1704,42 @@ fn fetch_cloud_quota_summary_rows(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_accounts_keep_separate_paths_and_sort_by_identity() {
+        let directory =
+            std::env::temp_dir().join(format!("codexbar-account-test-{}", std::process::id()));
+        fs::create_dir(&directory).unwrap();
+        for (folder, email) in [("z", "work@example.com"), ("a", "home@example.com")] {
+            let path = &directory.join("accounts").join(folder);
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("tokens.json"), serde_json::json!({
+                "accessToken": "synthetic", "refreshToken": "synthetic", "expiresAt": 0, "email": email,
+            }).to_string()).unwrap();
+        }
+        let accounts = stored_accounts(&directory);
+        assert_eq!(
+            accounts
+                .iter()
+                .map(|item| item.0.as_str())
+                .collect::<Vec<_>>(),
+            vec!["home@example.com", "work@example.com"]
+        );
+        assert_ne!(accounts[0].1, accounts[1].1);
+        let legacy = directory.join("tokens.json");
+        fs::write(&legacy, serde_json::json!({
+            "accessToken": "synthetic", "refreshToken": "synthetic", "expiresAt": 0, "email": "home@example.com",
+        }).to_string()).unwrap();
+        let deduplicated = stored_accounts(&directory);
+        assert_eq!(deduplicated.len(), 2);
+        assert_eq!(deduplicated[0].1, accounts[0].1);
+        fs::write(&legacy, serde_json::json!({
+            "accessToken": "synthetic", "refreshToken": "synthetic", "expiresAt": 0, "email": "legacy@example.com",
+        }).to_string()).unwrap();
+        assert_eq!(stored_accounts(&directory).len(), 3);
+        assert!(!directory.join("config.json").exists());
+        fs::remove_dir_all(&directory).unwrap();
+    }
 
     #[test]
     fn detects_agy_process_without_csrf_token() {

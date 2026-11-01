@@ -3,6 +3,7 @@ import QtQuick
 import ".." as Shell
 import "CodexBarModel.mjs" as Model
 import "CodexBarSettings.mjs" as Settings
+import "codexbar-accounts.mjs" as Accounts
 
 Item {
   id: root
@@ -17,10 +18,8 @@ Item {
   }
   property int tab: 0
   property int editing: -1
-  property string accountMode: "active"
-  onEditingChanged: {
-    accountMode = config?.allAccounts ? "all" : config?.account ? "named" : config?.accountIndex > 0 ? "index" : "active";
-  }
+  readonly property string accountMode: Accounts.mode(config)
+  property string pendingLogout: ""
   property var base: Settings.clone(pageState.settings || {})
   property var draft: Object.assign({}, base, {provider: "all",
     providerConfigs: Settings.providerRows(base, pageState.detectedProviders())})
@@ -33,6 +32,7 @@ Item {
 
   function patch(key, value) { const next = Object.assign({}, draft); next[key] = value; draft = next; }
   function updateProvider(key, value) {
+    if (editing < 0 || !providers[editing]) return;
     const rows = Settings.clone(providers);
     rows[editing][key] = value;
     patch("providerConfigs", rows);
@@ -55,24 +55,33 @@ Item {
     patch("providerConfigs", rows); editing = index;
   }
   function accountOptions() {
-    const rows = [{value: "active", label: "Active account"}, {value: "all", label: "All accounts"},
-      {value: "named", label: "Named account"}, {value: "index", label: "Account index"}];
-    const seen = [];
-    for (const entry of (pageState.accountEntries || []).concat(pageState.entries || [])) {
-      if (entry.provider !== config?.provider || !entry.account || seen.includes(entry.account)) continue;
-      seen.push(entry.account); rows.push({value: "saved:" + entry.account, label: entry.account});
-    }
-    return rows;
+    return [{value: "active", label: "Follow active account"}, {value: "all", label: "All accounts"},
+      {value: "selected", label: "Selected accounts"}, {value: "index", label: "Account index (advanced)"}];
   }
-  function selectAccount(value) {
-    accountMode = value.startsWith("saved:") ? "named" : value;
-    const rows = Settings.clone(providers); const item = rows[editing];
-    item.allAccounts = value === "all";
-    if (value.startsWith("saved:")) { item.account = value.slice(6); item.accountIndex = 0; }
-    else if (value === "active" || value === "all") { item.account = ""; item.accountIndex = 0; }
-    else if (value === "index") { item.account = ""; item.accountIndex = Math.max(1, Number(item.accountIndex) || 1); }
-    else { item.account = item.account || ""; item.accountIndex = 0; }
+  function selectAccount(value, accounts) {
+    if (editing < 0) return;
+    const rows = Settings.clone(providers);
+    rows[editing] = Accounts.selection(config, value, accounts);
     patch("providerConfigs", rows);
+  }
+  function accountCandidates() {
+    const detected = pageState.accountRequest?.provider === config?.provider
+      && pageState.accountRequest?.source === config?.source ? pageState.accountEntries || [] : [];
+    return Accounts.candidates(config, detected);
+  }
+  function toggleAccount(name, checked) {
+    const list = Accounts.selected(config);
+    selectAccount("selected", checked ? list.concat([name])
+      : list.filter(value => value.toLowerCase() !== name.toLowerCase()));
+  }
+  function addAccountProfile() {
+    const rows = Settings.clone(providers);
+    const next = Accounts.selection(config, "active", []);
+    next.profileName = "New account";
+    next.apiKey = "";
+    rows.splice(editing + 1, 0, next);
+    patch("providerConfigs", rows);
+    editing += 1;
   }
   function apply() {
     validationError = "";
@@ -91,6 +100,7 @@ Item {
     target: root.pageState
     function onSettingsSaved() { root.stackController.pop(false); }
   }
+  onEditingChanged: { pendingLogout = ""; accountName.text = ""; }
   Keys.onEscapePressed: { if (editing >= 0) editing = -1; else root.stackController.pop(); }
 
   Shell.PanelBackground { anchors.fill: parent }
@@ -234,8 +244,8 @@ Item {
             ProviderIcon { x: 12; y: 22; size: 18; provider: providerRow.modelData.provider }
             Column {
               x: 40; y: 12; width: parent.width - 110; spacing: 5
-              Text { width: parent.width; text: Model.providerName(providerRow.modelData.provider); textFormat: Text.PlainText; elide: Text.ElideRight; color: "white"; font.family: Shell.Theme.fontFamily; font.pixelSize: 12 }
-              Text { width: parent.width; text: (providerRow.modelData.source || "auto") + " · " + (providerRow.modelData.allAccounts ? "All accounts" : providerRow.modelData.account || (providerRow.modelData.accountIndex ? "Account " + providerRow.modelData.accountIndex : "Active account")); textFormat: Text.PlainText; elide: Text.ElideRight; color: "white"; opacity: 0.5; font.family: Shell.Theme.fontFamily; font.pixelSize: 10 }
+              Text { width: parent.width; text: providerRow.modelData.profileName || Model.providerName(providerRow.modelData.provider); textFormat: Text.PlainText; elide: Text.ElideRight; color: "white"; font.family: Shell.Theme.fontFamily; font.pixelSize: 12 }
+              Text { width: parent.width; text: (providerRow.modelData.source || "auto") + " · " + (Accounts.mode(providerRow.modelData) === "selected" ? Accounts.selected(providerRow.modelData).join(", ") || "Select accounts" : providerRow.modelData.allAccounts ? "All accounts" : providerRow.modelData.accountIndex ? "Account " + providerRow.modelData.accountIndex : "Active account"); textFormat: Text.PlainText; elide: Text.ElideRight; color: "white"; opacity: 0.5; font.family: Shell.Theme.fontFamily; font.pixelSize: 10 }
             }
             MouseArea {
               width: parent.width - 68; height: parent.height
@@ -268,39 +278,22 @@ Item {
         SettingToggle { width: parent.width; text: "Enabled"; checked: root.config?.enabled !== false; onToggled: value => root.updateProvider("enabled", value) }
         Text { text: "Source"; color: "white"; opacity: 0.6; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
         SettingChoice { objectName: "providerSource"; width: parent.width; options: Settings.sources(root.config?.provider); value: root.config?.source || "auto"; onPicked: value => root.updateProvider("source", value) }
-        Text { visible: root.config?.provider !== "bedrock"; text: root.config?.provider === "devin" ? "Organization ID" : "Account"; color: "white"; opacity: 0.6; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
-        SettingChoice {
-          visible: root.config?.provider !== "devin" && root.config?.provider !== "bedrock"
-          width: parent.width; options: root.accountOptions()
-          value: root.accountMode
-          onPicked: value => root.selectAccount(value)
-        }
         Shell.Field {
-          visible: root.config?.provider !== "bedrock" && (root.accountMode === "named" || root.config?.provider === "devin")
-          width: parent.width; text: root.config?.account || ""; placeholderText: root.config?.provider === "devin" ? "Organization ID (optional)" : "Account name or email"
-          onTextChanged: if (root.config && root.config.account !== text) root.updateProvider("account", text)
-          Accessible.name: "Account name or email"
-        }
-        SettingNumber {
-          visible: root.accountMode === "index" && root.config?.provider !== "bedrock"
-          width: parent.width; text: "Account index"; minimum: 1; maximum: 100
-          value: root.config?.accountIndex || 1
-          onChanged: value => root.updateProvider("accountIndex", value)
-        }
-        ActionButton {
-          width: parent.width
-          visible: root.config?.provider !== "bedrock" && root.config?.provider !== "devin"
-          text: root.pageState.discoveringAccounts ? "Detecting accounts..." : "Detect accounts"
-          interactive: !root.pageState.discoveringAccounts
-          onClicked: root.pageState.discoverAccounts(Settings.clone(root.config))
+          visible: root.config?.source === "api" || !!root.config?.profileName
+          width: parent.width; text: root.config?.profileName || ""; placeholderText: "Account label, for example Work"
+          onTextChanged: if (root.config && root.config.profileName !== text) root.updateProvider("profileName", text)
+          Accessible.name: "Account label"
         }
         Text {
-          width: parent.width
-          visible: root.pageState.accountError !== ""
-          text: root.pageState.accountError || ""
-          textFormat: Text.PlainText
-          color: "#FA9CA7"; wrapMode: Text.Wrap
+          visible: root.config?.provider === "devin"
+          text: "Organization ID"; color: "white"; opacity: 0.6
           font.family: Shell.Theme.fontFamily; font.pixelSize: 11
+        }
+        Shell.Field {
+          visible: root.config?.provider === "devin"
+          width: parent.width; text: root.config?.account || ""; placeholderText: "Organization ID (optional)"
+          onTextChanged: if (root.config && root.config.account !== text) root.updateProvider("account", text)
+          Accessible.name: "Organization ID"
         }
         Column {
           width: parent.width; spacing: 8
@@ -315,6 +308,72 @@ Item {
           }
           Text { width: parent.width; text: "Leave empty to use the CLI configuration or environment."; wrapMode: Text.Wrap; color: "white"; opacity: 0.5; font.family: Shell.Theme.fontFamily; font.pixelSize: 10 }
         }
+        Column {
+          width: parent.width; spacing: 8
+          visible: !["devin", "bedrock", "demo"].includes(root.config?.provider)
+          Text { text: "Accounts"; color: "white"; opacity: 0.6; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+          SettingChoice {
+            objectName: "accountMode"
+            width: parent.width; options: root.accountOptions()
+            value: root.accountMode
+            Accessible.name: "Accounts to show"
+            onPicked: value => root.selectAccount(value)
+          }
+          Text {
+            width: parent.width
+            text: root.config?.source === "api" ? "Use a saved account name, or add another account profile for a separate API key. Add account names by hand for this source."
+              : root.accountMode === "active" ? "Follows the account signed in to the provider. This does not switch the provider's login."
+              : root.accountMode === "all" ? "Shows every account the source can read. Some sources only return the active account."
+              : "Select the accounts to show. Add a name if detection does not find it."
+            wrapMode: Text.Wrap; color: "white"; opacity: 0.5; font.family: Shell.Theme.fontFamily; font.pixelSize: 10
+          }
+          Repeater {
+            model: root.accountMode === "selected" ? root.accountCandidates() : []
+            delegate: SettingToggle {
+              required property string modelData
+              width: parent.width; text: modelData
+              checked: Accounts.selected(root.config).some(name => name.toLowerCase() === modelData.toLowerCase())
+              onToggled: value => root.toggleAccount(modelData, value)
+            }
+          }
+          Shell.Field {
+            id: accountName
+            visible: root.accountMode === "selected"
+            width: parent.width; placeholderText: "Account name or email"
+            Accessible.name: "Account name or email"
+          }
+          ActionButton {
+            visible: root.accountMode === "selected"
+            width: parent.width; text: "Add account name"
+            interactive: accountName.text.trim().length > 0
+            onClicked: { root.toggleAccount(accountName.text, true); accountName.text = ""; }
+          }
+          Text {
+            width: parent.width
+            visible: root.accountMode === "selected" && Accounts.selected(root.config).length === 0
+            text: "Select at least one account before you apply."
+            wrapMode: Text.Wrap; color: "#FA9CA7"; font.family: Shell.Theme.fontFamily; font.pixelSize: 11
+          }
+          SettingNumber {
+            visible: root.accountMode === "index"
+            width: parent.width; text: "Account index"; minimum: 1; maximum: 1000
+            value: root.config?.accountIndex || 1
+            onChanged: value => root.updateProvider("accountIndex", value)
+          }
+          ActionButton {
+            width: parent.width; text: root.pageState.discoveringAccounts ? "Detecting accounts..." : "Detect accounts"
+            interactive: !root.pageState.discoveringAccounts && root.config?.source !== "api"
+            onClicked: root.pageState.discoverAccounts(Settings.clone(root.config))
+          }
+          Text {
+            width: parent.width
+            visible: root.pageState.accountRequest?.provider === root.config?.provider && root.pageState.accountError !== ""
+            text: root.pageState.accountError || ""; textFormat: Text.PlainText
+            color: "#FA9CA7"; wrapMode: Text.Wrap
+            font.family: Shell.Theme.fontFamily; font.pixelSize: 11
+          }
+        }
+        ActionButton { width: parent.width; text: "Add another account profile"; onClicked: root.addAccountProfile() }
         Text {
           width: parent.width; visible: root.config?.provider === "bedrock"
           text: "Uses the AWS credentials and profile configured for this session."
@@ -328,7 +387,15 @@ Item {
           Row {
             spacing: 8
             ActionButton { width: (fields.width - 8) / 2; text: root.pageState.authenticating ? "Please wait..." : "Sign in"; interactive: !root.pageState.authenticating; onClicked: root.pageState.authenticate("login") }
-            ActionButton { width: (fields.width - 8) / 2; text: "Sign out"; interactive: !root.pageState.authenticating; onClicked: root.pageState.authenticate("logout") }
+            ActionButton { width: (fields.width - 8) / 2; text: "Sign out selected"; interactive: !root.pageState.authenticating && root.accountMode === "selected" && Accounts.selected(root.config).length === 1
+              onClicked: root.pendingLogout = Accounts.selected(root.config)[0] }
+          }
+          Column {
+            width: parent.width; spacing: 8
+            visible: root.pendingLogout !== ""
+            Text { width: parent.width; text: "Sign out " + root.pendingLogout + "? This removes its saved login on this device."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: "white"; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+            ActionButton { width: parent.width; text: "Confirm sign out"; onClicked: { root.pageState.authenticate("logout", root.pendingLogout); root.pendingLogout = ""; } }
+            ActionButton { width: parent.width; text: "Keep account"; onClicked: root.pendingLogout = "" }
           }
           Text { width: parent.width; visible: !!root.pageState.authMessage; text: root.pageState.authMessage || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: "white"; opacity: 0.6; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
         }

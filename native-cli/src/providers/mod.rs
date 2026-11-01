@@ -1,4 +1,4 @@
-mod antigravity;
+pub mod antigravity;
 mod codebuddy;
 mod commandcode;
 mod cursor;

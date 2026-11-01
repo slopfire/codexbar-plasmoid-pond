@@ -16,7 +16,7 @@ class BundleTests(unittest.TestCase):
         self.base = Path(self.temp.name)
         self.module = self.base / 'module'
         self.module.mkdir()
-        for name in ['codexbar-helper.mjs', 'codexbar-resilience.mjs']:
+        for name in ['codexbar-helper.mjs', 'codexbar-resilience.mjs', 'codexbar-accounts.mjs']:
             shutil.copy2(MODULE / name, self.module / name)
         self.env = dict(os.environ, HOME=str(self.base), CODEXBAR_CLI='codexbar', CODEXBAR_NATIVE_CLI='',
                         XDG_CONFIG_HOME=str(self.base / 'config'), XDG_CACHE_HOME=str(self.base / 'cache'))
@@ -54,6 +54,6 @@ export async function updateIfNeeded(options) {
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('#!/usr/bin/env node\nrequire("node:fs").writeFileSync(' + json.dumps(str(marker)) + ',' + json.dumps(label) + ');\n')
             path.chmod(0o700)
-        result = self.helper(['--provider', 'antigravity', '--auth-action', 'logout'])
+        result = self.helper(['--provider', 'antigravity', '--auth-action', 'logout', '--account', 'test@example.com'])
         self.assertTrue(result['ok'], result)
         self.assertEqual(marker.read_text(), 'bundled')

@@ -5,6 +5,7 @@ import QtQuick.Dialogs as QtDialogs
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.plasma5support as Plasma5Support
 import QtQml.Models
+import "../code/codexbar-accounts.mjs" as Accounts
 
 Kirigami.ScrollablePage {
     id: page
@@ -35,7 +36,9 @@ Kirigami.ScrollablePage {
     property var discoveredAccounts: ({})
     property bool accountDiscoveryBusy: false
     property string accountDiscoveryStatus: ""
+    property var accountDiscoveryProviders: []
     property string accountDiscoveryCommand: ""
+    property string pendingLogoutAccount: ""
 
     readonly property var sourceLabels: ({
         auto: i18n("Auto"),
@@ -240,6 +243,9 @@ Kirigami.ScrollablePage {
                         required property string account
                         required property int accountIndex
                         required property bool allAccounts
+                        required property string accountsJson
+                        required property string accountMode
+                        required property string profileName
                         required property bool showInCompactAll
                         required property int compactBarLimit
                         required property string compactBarIds
@@ -273,6 +279,12 @@ Kirigami.ScrollablePage {
                             readonly property string account: delegateRoot.account
                             readonly property int accountIndex: delegateRoot.accountIndex
                             readonly property bool allAccounts: delegateRoot.allAccounts
+                            readonly property string accountsJson: delegateRoot.accountsJson
+                            readonly property string accountMode: delegateRoot.accountMode
+                            readonly property string profileName: delegateRoot.profileName
+                            readonly property var accountConfig: ({provider: provider, source: source,
+                                account: account, accountIndex: accountIndex, allAccounts: allAccounts,
+                                accounts: Accounts.names(accountsJson), accountMode: accountMode})
                             readonly property bool showInCompactAll: delegateRoot.showInCompactAll
                             readonly property int compactBarLimit: delegateRoot.compactBarLimit
                             readonly property string compactBarIds: delegateRoot.compactBarIds
@@ -376,8 +388,11 @@ Kirigami.ScrollablePage {
                                             currentIndex: page.providerIndex(providerDelegate.provider)
                                             onActivated: function(row) {
                                                 const selected = page.providerCatalog[row];
-                                                page.setProviderProperty(providerDelegate.index, "provider", selected.id);
-                                                if (page.availableSources(selected.id).indexOf(providerDelegate.source) === -1) {
+                                                if (selected.id !== providerDelegate.provider) {
+                                                    page.setAccountSelection(providerDelegate.index, "active", []);
+                                                    page.setProviderProperty(providerDelegate.index, "apiKey", "");
+                                                    page.setProviderProperty(providerDelegate.index, "profileName", "");
+                                                    page.setProviderProperty(providerDelegate.index, "provider", selected.id);
                                                     page.setProviderProperty(providerDelegate.index, "source", selected.linuxDefault);
                                                 }
                                             }
@@ -417,6 +432,15 @@ Kirigami.ScrollablePage {
                                         }
                                     }
 
+                                    QtControls.TextField {
+                                        Layout.fillWidth: true
+                                        visible: providerDelegate.source === "api" || providerDelegate.profileName.length > 0
+                                        text: providerDelegate.profileName
+                                        placeholderText: i18n("Account label, for example Work")
+                                        Accessible.name: i18n("Account label")
+                                        onTextEdited: page.setProviderProperty(providerDelegate.index, "profileName", text)
+                                    }
+
                                     // Antigravity Native Auth: browser Google OAuth
                                     RowLayout {
                                         Layout.fillWidth: true
@@ -434,11 +458,15 @@ Kirigami.ScrollablePage {
                                         }
 
                                         QtControls.Button {
-                                            text: i18n("Log out")
+                                            text: i18n("Sign out selected")
                                             icon.name: "system-log-out"
                                             display: QtControls.AbstractButton.TextBesideIcon
-                                            enabled: !page.antigravityAuthBusy
-                                            onClicked: page.runAntigravityLogout()
+                                            enabled: !page.antigravityAuthBusy && Accounts.mode(providerDelegate.accountConfig) === "selected"
+                                                && Accounts.selected(providerDelegate.accountConfig).length === 1
+                                            onClicked: {
+                                                page.pendingLogoutAccount = Accounts.selected(providerDelegate.accountConfig)[0];
+                                                logoutDialog.open();
+                                            }
                                         }
 
                                         QtControls.Label {
@@ -576,61 +604,109 @@ Kirigami.ScrollablePage {
 
                                     ColumnLayout {
                                         Layout.fillWidth: true
-                                        visible: providerDelegate.provider !== "devin"
-                                                 && providerDelegate.provider !== "demo"
+                                        visible: ["devin", "demo", "bedrock"].indexOf(providerDelegate.provider) < 0
                                         spacing: Kirigami.Units.smallSpacing
 
                                         RowLayout {
                                             Layout.fillWidth: true
-
-                                            QtControls.Label {
-                                                text: i18n("Account:")
-                                            }
-
+                                            QtControls.Label { text: i18n("Accounts:") }
                                             QtControls.ComboBox {
-                                                id: accountPicker
                                                 Layout.fillWidth: true
                                                 textRole: "text"
-                                                valueRole: "value"
-                                                model: page.accountChoices(
-                                                    providerDelegate.provider,
-                                                    providerDelegate.account,
-                                                    providerDelegate.accountIndex
-                                                )
-                                                currentIndex: page.accountChoiceIndex(
-                                                    model,
-                                                    providerDelegate.account,
-                                                    providerDelegate.accountIndex,
-                                                    providerDelegate.allAccounts
-                                                )
+                                                model: [
+                                                    {text: i18n("Follow active account"), value: "active"},
+                                                    {text: i18n("All accounts"), value: "all"},
+                                                    {text: i18n("Selected accounts"), value: "selected"},
+                                                    {text: i18n("Account index (advanced)"), value: "index"}
+                                                ]
+                                                currentIndex: model.findIndex(function(row) { return row.value === Accounts.mode(providerDelegate.accountConfig); })
                                                 onActivated: function(row) {
-                                                    const choice = model[row];
-                                                    if (!choice) {
-                                                        return;
-                                                    }
-                                                    page.applyAccountChoice(providerDelegate.index, choice);
+                                                    page.setAccountSelection(providerDelegate.index, model[row].value,
+                                                        Accounts.selected(providerDelegate.accountConfig));
                                                 }
                                             }
-
-                                            QtControls.BusyIndicator {
-                                                Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
-                                                Layout.preferredHeight: Kirigami.Units.iconSizes.smallMedium
-                                                running: page.accountDiscoveryBusy
-                                                visible: running
-                                            }
-
                                             QtControls.ToolButton {
                                                 icon.name: "view-refresh"
-                                                text: i18n("Detect accounts again")
+                                                text: i18n("Detect accounts")
                                                 display: QtControls.AbstractButton.IconOnly
-                                                enabled: !page.accountDiscoveryBusy
-                                                onClicked: page.discoverAccounts()
+                                                enabled: !page.accountDiscoveryBusy && providerDelegate.source !== "api"
+                                                onClicked: page.discoverAccounts(providerDelegate.index)
                                                 QtControls.ToolTip.visible: hovered
-                                                QtControls.ToolTip.text: page.accountDiscoveryStatus.length > 0
-                                                    ? page.accountDiscoveryStatus
-                                                    : i18n("Detect accounts again")
+                                                QtControls.ToolTip.text: text
                                             }
                                         }
+                                        QtControls.Label {
+                                            Layout.fillWidth: true
+                                            text: providerDelegate.source === "api"
+                                                ? i18n("Use a saved account name, or add another account profile for a separate API key. Add account names by hand for this source.")
+                                                : Accounts.mode(providerDelegate.accountConfig) === "active"
+                                                ? i18n("Follows the account signed in to the provider. This does not switch the provider's login.")
+                                                : Accounts.mode(providerDelegate.accountConfig) === "all"
+                                                    ? i18n("Shows every account the source can read. Some sources only return the active account.")
+                                                    : i18n("Select the accounts to show. Add a name if detection does not find it.")
+                                            color: Kirigami.Theme.disabledTextColor
+                                            wrapMode: Text.Wrap
+                                        }
+                                        Repeater {
+                                            model: Accounts.mode(providerDelegate.accountConfig) === "selected"
+                                                ? Accounts.names((page.discoveredAccounts[page.normalizedProviderId(providerDelegate.provider)] || [])
+                                                    .concat(Accounts.selected(providerDelegate.accountConfig))) : []
+                                            delegate: QtControls.CheckBox {
+                                                required property string modelData
+                                                Layout.fillWidth: true
+                                                text: modelData
+                                                checked: Accounts.selected(providerDelegate.accountConfig).some(function(name) { return name.toLowerCase() === modelData.toLowerCase(); })
+                                                onToggled: page.toggleAccount(providerDelegate.index, modelData, checked)
+                                            }
+                                        }
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            visible: Accounts.mode(providerDelegate.accountConfig) === "selected"
+                                            QtControls.TextField {
+                                                id: addAccountName
+                                                Layout.fillWidth: true
+                                                placeholderText: i18n("Account name or email")
+                                                Accessible.name: i18n("Account name or email")
+                                                onAccepted: addAccountButton.clicked()
+                                            }
+                                            QtControls.Button {
+                                                id: addAccountButton
+                                                text: i18n("Add")
+                                                enabled: addAccountName.text.trim().length > 0
+                                                onClicked: {
+                                                    page.toggleAccount(providerDelegate.index, addAccountName.text, true);
+                                                    addAccountName.clear();
+                                                }
+                                            }
+                                        }
+                                        QtControls.Label {
+                                            Layout.fillWidth: true
+                                            visible: Accounts.mode(providerDelegate.accountConfig) === "selected"
+                                                && Accounts.selected(providerDelegate.accountConfig).length === 0
+                                            text: i18n("Select at least one account. This provider will show an error until you select one.")
+                                            color: Kirigami.Theme.neutralTextColor
+                                            wrapMode: Text.Wrap
+                                        }
+                                        QtControls.SpinBox {
+                                            visible: Accounts.mode(providerDelegate.accountConfig) === "index"
+                                            from: 1; to: 1000
+                                            value: providerDelegate.accountIndex || 1
+                                            Accessible.name: i18n("Account index")
+                                            onValueModified: page.setProviderProperty(providerDelegate.index, "accountIndex", value)
+                                        }
+                                        QtControls.Label {
+                                            Layout.fillWidth: true
+                                            visible: page.accountDiscoveryStatus.length > 0
+                                            text: page.accountDiscoveryStatus
+                                            textFormat: Text.PlainText
+                                            wrapMode: Text.Wrap
+                                            color: Kirigami.Theme.disabledTextColor
+                                        }
+                                    }
+                                    QtControls.Button {
+                                        text: i18n("Add another account profile")
+                                        icon.name: "list-add"
+                                        onClicked: page.addAccountProfile(providerDelegate.index)
                                     }
 
                                     RowLayout {
@@ -859,6 +935,9 @@ Kirigami.ScrollablePage {
                                 account: "",
                                 accountIndex: 0,
                                 allAccounts: false,
+                                accountsJson: "[]",
+                                accountMode: "active",
+                                profileName: "",
                                 showInCompactAll: true,
                                 compactBarLimit: 4,
                                 compactBarIds: page.defaultBarIds(provider.id),
@@ -902,6 +981,36 @@ Kirigami.ScrollablePage {
 
     function setProviderProperty(index, key, value) {
         providerModel.setProperty(index, key, value);
+        syncConfig();
+    }
+
+    function setAccountSelection(index, nextMode, accounts) {
+        const item = providerModel.get(index);
+        const next = Accounts.selection({account: item.account, accounts: Accounts.names(item.accountsJson),
+            accountIndex: item.accountIndex}, nextMode, accounts);
+        for (const key of ["account", "accountIndex", "allAccounts", "accountMode"]) {
+            providerModel.setProperty(index, key, next[key]);
+        }
+        providerModel.setProperty(index, "accountsJson", JSON.stringify(next.accounts));
+        syncConfig();
+    }
+
+    function toggleAccount(index, name, checked) {
+        const item = providerModel.get(index);
+        const selected = Accounts.selected({accounts: Accounts.names(item.accountsJson), account: item.account});
+        const next = checked ? selected.concat([name])
+            : selected.filter(function(value) { return value.toLowerCase() !== name.toLowerCase(); });
+        setAccountSelection(index, "selected", next);
+    }
+
+    function addAccountProfile(index) {
+        const rows = JSON.parse(serializeProviders());
+        const item = rows[index];
+        const next = Accounts.selection(item, "active", []);
+        next.profileName = i18n("New account");
+        next.apiKey = "";
+        const parsed = parseProviderConfigs(JSON.stringify([next]));
+        providerModel.insert(index + 1, parsed[0]);
         syncConfig();
     }
 
@@ -1008,7 +1117,8 @@ Kirigami.ScrollablePage {
                 ? ["codex", "gemini"]
                 : legacyProvider.split(",").map(function(item) { return item.trim(); }).filter(function(item) { return item.length > 0; });
             items = providers.map(function(provider) {
-                return { provider: provider, source: legacySource, enabled: true };
+                return { provider: provider, source: legacySource, enabled: true,
+                    account: page.cfg_account, accountIndex: page.cfg_accountIndex, allAccounts: page.cfg_allAccounts };
             });
         }
         return items.map(function(item) {
@@ -1022,6 +1132,9 @@ Kirigami.ScrollablePage {
                 account: String(item.account || ""),
                 accountIndex: Math.max(0, Number(item.accountIndex || 0)),
                 allAccounts: item.allAccounts === true,
+                accountsJson: JSON.stringify(Accounts.names(item.accounts)),
+                accountMode: Accounts.mode(item),
+                profileName: String(item.profileName || ""),
                 showInCompactAll: item.showInCompactAll !== false,
                 compactBarLimit: compactBarLimitFor(item),
                 compactBarIds: compactBarIdsFor(item, provider.id),
@@ -1043,6 +1156,9 @@ Kirigami.ScrollablePage {
                 account: item.account,
                 accountIndex: item.accountIndex,
                 allAccounts: item.allAccounts,
+                accounts: Accounts.names(item.accountsJson),
+                accountMode: item.accountMode,
+                profileName: item.profileName,
                 showInCompactAll: item.showInCompactAll,
                 compactBarLimit: item.compactBarLimit,
                 compactBarIds: item.compactBarIds,
@@ -1167,68 +1283,6 @@ Kirigami.ScrollablePage {
         return 0;
     }
 
-    function accountChoices(providerId, configuredAccount, configuredIndex) {
-        const choices = [
-            { text: i18n("Active account"), value: "", kind: "active" }
-        ];
-        const provider = normalizedProviderId(providerId);
-        const detected = discoveredAccounts[provider] || [];
-        const seen = {};
-        for (let index = 0; index < detected.length; index += 1) {
-            const account = String(detected[index] || "").trim();
-            const key = account.toLowerCase();
-            if (!account || seen[key]) {
-                continue;
-            }
-            seen[key] = true;
-            choices.push({ text: account, value: account, kind: "account" });
-        }
-
-        const savedAccount = String(configuredAccount || "").trim();
-        if (savedAccount.length > 0 && !seen[savedAccount.toLowerCase()]) {
-            choices.push({ text: savedAccount, value: savedAccount, kind: "account" });
-        } else if (savedAccount.length === 0 && Number(configuredIndex || 0) > 0) {
-            choices.push({
-                text: i18n("Account #%1 (saved)", Number(configuredIndex)),
-                value: String(Number(configuredIndex)),
-                kind: "index"
-            });
-        }
-        choices.push({ text: i18n("All accounts"), value: "*", kind: "all" });
-        return choices;
-    }
-
-    function accountChoiceIndex(choices, configuredAccount, configuredIndex, allAccounts) {
-        const wantedKind = allAccounts
-            ? "all"
-            : (String(configuredAccount || "").trim().length > 0
-                ? "account"
-                : (Number(configuredIndex || 0) > 0 ? "index" : "active"));
-        const wantedValue = wantedKind === "account"
-            ? String(configuredAccount || "").trim()
-            : (wantedKind === "index" ? String(Number(configuredIndex)) : "");
-        for (let index = 0; index < choices.length; index += 1) {
-            const choice = choices[index];
-            if (choice.kind === wantedKind
-                    && (wantedKind !== "account" && wantedKind !== "index"
-                        || (wantedKind === "account"
-                            ? String(choice.value).toLowerCase() === wantedValue.toLowerCase()
-                            : String(choice.value) === wantedValue))) {
-                return index;
-            }
-        }
-        return 0;
-    }
-
-    function applyAccountChoice(providerIndex, choice) {
-        const kind = String(choice.kind || "active");
-        setProviderProperty(providerIndex, "allAccounts", kind === "all");
-        setProviderProperty(providerIndex, "account", kind === "account" ? String(choice.value || "") : "");
-        setProviderProperty(providerIndex, "accountIndex", kind === "index" ? Number(choice.value || 0) : 0);
-    }
-
-    // Every provider except the demo row can consume the sync server's merged
-    // data; the remote source needs no local credentials.
     function availableSources(providerId) {
         const provider = catalogFor(providerId);
         const list = provider.sources.slice();
@@ -1371,14 +1425,15 @@ Kirigami.ScrollablePage {
         return path;
     }
 
-    function accountDiscoveryConfigs() {
+    function accountDiscoveryConfigs(selectedIndex) {
         const configs = [];
         for (let index = 0; index < providerModel.count; index += 1) {
             const item = providerModel.get(index);
+            if (selectedIndex >= 0 && index !== selectedIndex) continue;
             const provider = normalizedProviderId(item.provider);
             // Remote-sourced rows have no local accounts to detect; the
             // server's merged entries already carry the account labels.
-            if (!item.enabled || provider === "devin" || provider === "demo" || String(item.source) === "remote") {
+            if (!item.enabled || provider === "devin" || provider === "demo" || provider === "bedrock" || String(item.source) === "remote" || String(item.source) === "api") {
                 continue;
             }
             configs.push({
@@ -1388,22 +1443,22 @@ Kirigami.ScrollablePage {
                 account: "",
                 accountIndex: 0,
                 allAccounts: true,
-                apiKey: item.apiKey,
                 includeCost: false
             });
         }
         return configs;
     }
 
-    function discoverAccounts() {
+    function discoverAccounts(selectedIndex) {
         if (accountDiscoveryBusy) {
             return;
         }
-        const configs = accountDiscoveryConfigs();
+        const configs = accountDiscoveryConfigs(Number.isInteger(selectedIndex) ? selectedIndex : -1);
         if (configs.length === 0) {
             accountDiscoveryStatus = i18n("Enable a provider to detect its accounts");
             return;
         }
+        accountDiscoveryProviders = configs.map(function(config) { return normalizedProviderId(config.provider); });
         const command = shellQuote(accountDiscoveryHelperPath())
             + " --cli " + shellQuote(cfg_cliPath || "codexbar")
             + " --providers " + shellQuote(JSON.stringify(configs))
@@ -1427,7 +1482,8 @@ Kirigami.ScrollablePage {
     }
 
     function applyDiscoveredAccountEntries(entries) {
-        const next = {};
+        const next = Object.assign({}, discoveredAccounts);
+        for (const provider of accountDiscoveryProviders) next[provider] = [];
         let count = 0;
         const list = Array.isArray(entries) ? entries : [];
         for (let index = 0; index < list.length; index += 1) {
@@ -1470,16 +1526,30 @@ Kirigami.ScrollablePage {
         );
     }
 
-    function runAntigravityLogout() {
+    function runAntigravityLogout(account) {
         if (page.antigravityAuthBusy) {
             return;
         }
+        if (!account) return;
         const cli = resolveNativeCliPath();
         page.antigravityAuthBusy = true;
         page.antigravityAuthStatus = i18n("Logging out…");
         antigravityAuthRunner.connectSource(
-            shellQuote(cli) + " logout --provider antigravity --all"
+            shellQuote(cli) + " logout --provider antigravity --account " + shellQuote(account)
         );
+    }
+
+    QtControls.Dialog {
+        id: logoutDialog
+        title: i18n("Sign out account?")
+        modal: true
+        standardButtons: QtControls.Dialog.Ok | QtControls.Dialog.Cancel
+        onAccepted: page.runAntigravityLogout(page.pendingLogoutAccount)
+        contentItem: QtControls.Label {
+            text: i18n("Remove the saved login for %1 on this device?", page.pendingLogoutAccount)
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+        }
     }
 
     // Hidden TextEdit for clipboard operations (Devin token snippet copy)
@@ -1573,6 +1643,7 @@ Kirigami.ScrollablePage {
             }
             page.antigravityAuthBusy = false;
             disconnectSource(sourceName);
+            if (exitCode === 0) Qt.callLater(page.discoverAccounts);
         }
     }
 

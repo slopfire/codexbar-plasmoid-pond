@@ -1,3 +1,5 @@
+import * as Accounts from "./codexbar-accounts.mjs";
+
 export const catalog = [
   {
     "id": "codex",
@@ -449,7 +451,7 @@ export function newProvider(id) {
   const item = catalog.find(item => item.id === id);
   if (!item) throw new Error("Choose a provider from the list");
   return {provider: id, source: item.defaultSource, enabled: true, account: "",
-    accountIndex: 0, allAccounts: false, apiKey: "", includeCost: true};
+    accountIndex: 0, allAccounts: false, accountMode: "active", accounts: [], profileName: "", apiKey: "", includeCost: true};
 }
 export function providerRows(settings, detected) {
   if (Array.isArray(settings.providerConfigs)) return clone(settings.providerConfigs);
@@ -502,6 +504,10 @@ export function validate(patch) {
         if (value !== undefined && value !== 0 && (!Number.isInteger(value) || value < min || value > max))
           throw new Error("Check " + key + " for " + item.name);
       }
+      if (Accounts.mode(row) === "selected" && Accounts.selected(row).length === 0)
+        throw new Error("Select at least one account for " + item.name);
+      if (row.accounts !== undefined && (!Array.isArray(row.accounts) || row.accounts.some(name => typeof name !== "string" || !name.trim())))
+        throw new Error("Check the account names for " + item.name);
       if (!Number.isInteger(Number(row.accountIndex || 0)) || Number(row.accountIndex || 0) < 0)
         throw new Error("Check the account index for " + item.name);
     }

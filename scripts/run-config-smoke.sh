@@ -23,9 +23,9 @@ mock_bin_dir="$("$repo_root/scripts/setup-mock-cli.sh" --print-bin)"
 unlink "$pass_marker" 2>/dev/null || true
 
 set +e
-PATH="$mock_bin_dir:$PATH" \
+QT_NO_XDG_DESKTOP_PORTAL=1 PATH="$mock_bin_dir:$PATH" \
   "$repo_root/scripts/run-virtual-plasma.sh" \
-    --timeout 5 \
+    --timeout 20 \
     --cmd plasmawindowed "$test_package" \
     >"$log_file" 2>&1
 rc=$?

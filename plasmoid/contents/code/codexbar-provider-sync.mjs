@@ -3,6 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import * as Accounts from "./codexbar-accounts.mjs";
+
 const args = parseArgs(process.argv.slice(2));
 const action = String(args.action || "read");
 
@@ -145,6 +147,9 @@ function normalizeProviders(raw) {
     source: clean(item?.source) || "auto",
     enabled: item?.enabled !== false,
     account: clean(item?.account),
+    accounts: Accounts.names(item?.accounts),
+    accountMode: clean(item?.accountMode),
+    profileName: clean(item?.profileName),
     accountIndex: Math.max(0, Number(item?.accountIndex || 0)),
     allAccounts: item?.allAccounts === true,
     apiKey: clean(item?.apiKey),

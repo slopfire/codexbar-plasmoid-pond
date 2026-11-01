@@ -26,7 +26,7 @@ FocusScope {
   Accessible.name: Model.accessibleLabel(tile, nowMs)
   PondToolTip {
     visible: pointer.hovered || root.activeFocus
-    heading: Model.providerName(root.entry?.provider)
+    heading: [Model.providerName(root.entry?.provider), root.entry?.account].filter(Boolean).join(" · ")
     text: Model.providerTooltip(root.tile, root.nowMs)
   }
   Accessible.onPressAction: root.clicked()
@@ -88,7 +88,7 @@ FocusScope {
     visible: !root.compact && root.showName
     y: root.ringSize + 6
     width: parent.width
-    text: root.entry ? Model.shortName(root.entry.provider) : ""
+    text: root.entry ? root.entry.profileName || (root.entry.accountSelection && root.entry.account) || Model.shortName(root.entry.provider) : ""
     textFormat: Text.PlainText
     color: root.theme.ink
     opacity: 0.7

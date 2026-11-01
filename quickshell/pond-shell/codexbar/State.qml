@@ -411,11 +411,15 @@ Item {
   property bool authenticating: false
   property string authMessage: ""
 
-  function authenticate(action) {
+  function authenticate(action, account) {
     if (authenticating || !["login", "logout"].includes(action)) return;
     authMessage = "";
     authProcess.command = ["node", helperPath, "--provider", "antigravity", "--auth-action", action,
       "--nativeCli", Quickshell.env("CODEXBAR_NATIVE_CLI") || localPath(Qt.resolvedUrl("codexbar-plasmoid"))];
+    if (action === "logout") {
+      if (!account) return;
+      authProcess.command = authProcess.command.concat(["--account", account]);
+    }
     authenticating = true;
     authProcess.running = true;
   }
@@ -442,8 +446,8 @@ Item {
     accountError = "";
     accountEntries = [];
     accountTimedOut = false;
-    accountRequest = Object.assign({}, config, {enabled: true, allAccounts: true, account: "", accountIndex: 0, includeCost: false});
-    const options = root.options(false);
+    accountRequest = Object.assign({}, config, {enabled: true, allAccounts: true, accounts: [], accountMode: "all", profileName: "", account: "", accountIndex: 0, includeCost: false});
+    const options = root.options(true);
     options.providers = [accountRequest];
     options.status = false;
     const args = command(options);

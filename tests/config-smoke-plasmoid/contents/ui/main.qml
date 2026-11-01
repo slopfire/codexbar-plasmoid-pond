@@ -1,12 +1,15 @@
 import QtQuick
+import QtQuick.Layouts
 import org.kde.plasma.plasmoid
 import org.kde.plasma.plasma5support as Plasma5Support
 
 PlasmoidItem {
     id: harness
 
+    Layout.minimumWidth: 900
+    Layout.minimumHeight: 640
     width: 900
-    height: 700
+    height: 640
 
     property int attempts: 0
     property bool resultRecorded: false
@@ -47,17 +50,31 @@ PlasmoidItem {
                 return;
             }
 
-            const choices = page.accountChoices("codex", "", 0);
-            let foundActive = false;
-            let foundDetected = false;
-            let foundAll = false;
-            for (let index = 0; index < choices.length; index += 1) {
-                foundActive = foundActive || choices[index].kind === "active";
-                foundDetected = foundDetected
-                    || String(choices[index].value) === "mock-codex@example.com";
-                foundAll = foundAll || choices[index].kind === "all";
-            }
-            if (foundActive && foundDetected && foundAll) {
+            const detected = page.discoveredAccounts.codex || [];
+            if (detected.indexOf("mock-codex@example.com") >= 0) {
+                page.setAccountSelection(0, "selected", ["home@example.com", "work@example.com"]);
+                let saved = JSON.parse(page.cfg_providerConfigs)[0];
+                if (saved.accounts.length !== 2 || saved.accountMode !== "selected" || saved.account || saved.allAccounts) {
+                    console.error("CONFIG_SMOKE_FAIL selected accounts did not round-trip");
+                    Qt.quit(); return;
+                }
+                page.toggleAccount(0, "home@example.com", false);
+                saved = JSON.parse(page.cfg_providerConfigs)[0];
+                if (saved.accounts.length !== 1 || saved.accounts[0] !== "work@example.com") {
+                    console.error("CONFIG_SMOKE_FAIL account removal did not round-trip");
+                    Qt.quit(); return;
+                }
+                page.setProviderProperty(0, "apiKey", "synthetic-private-key");
+                if (JSON.stringify(page.accountDiscoveryConfigs(0)).indexOf("synthetic-private-key") >= 0) {
+                    console.error("CONFIG_SMOKE_FAIL discovery exposed a key");
+                    Qt.quit(); return;
+                }
+                page.addAccountProfile(0);
+                const profiles = JSON.parse(page.cfg_providerConfigs);
+                if (profiles[1].apiKey || profiles[1].accountMode !== "active" || profiles[1].accounts.length) {
+                    console.error("CONFIG_SMOKE_FAIL new profile reused credentials or account selection");
+                    Qt.quit(); return;
+                }
                 // The "Sync all from server" toggle must round-trip through the
                 // page property so KConfigXT persists it on Apply.
                 page.cfg_syncAllFromServer = true;
@@ -73,7 +90,7 @@ PlasmoidItem {
             }
             if (harness.attempts >= 150) {
                 console.error(
-                    "CONFIG_SMOKE_FAIL choices=" + JSON.stringify(choices)
+                    "CONFIG_SMOKE_FAIL detected=" + JSON.stringify(detected)
                     + " status=" + String(page.accountDiscoveryStatus)
                 );
                 Qt.quit();

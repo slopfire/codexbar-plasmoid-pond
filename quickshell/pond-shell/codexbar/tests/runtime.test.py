@@ -13,7 +13,7 @@ with tempfile.TemporaryDirectory(prefix="codexbar-state-test-") as tmp:
     base = Path(tmp)
     module = base / "codexbar"
     module.mkdir()
-    for name in ("State.qml", "CodexBarModel.mjs", "CodexBarSettings.mjs", "settings-store.mjs"):
+    for name in ("State.qml", "CodexBarModel.mjs", "CodexBarSettings.mjs", "codexbar-accounts.mjs", "settings-store.mjs"):
         shutil.copy2(source / name, module / name)
     (base / ".claude").mkdir()
     config = base / ".config/codexbar-plasmoid"

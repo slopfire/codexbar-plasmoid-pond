@@ -35,6 +35,7 @@ ShellRoot {
       if (node.objectName === "sidebarProviderIcon") out.push({sidebarIcon: true, visible: node.visible});
       if (node.objectName === "nestedRingLabels") out.push({nestedLabels: true, visible: node.visible,
         height: node.height, rowHeight: node.parent.parent.height, text: node.text});
+      if (node.objectName === "sidebarAccount") out.push({accountCaption: true, text: node.text, visible: node.visible});
       if (node.objectName === "historyDayDetails") out.push({dayDetails: true, text: node.text, visible: node.visible});
       if (node.objectName === "providerKey") out.push({keyField: true, masked: node.password && !node.revealed});
       if (node.objectName === "usageWindows" || node.objectName === "usageWindow" || node.objectName === "spendSection" || node.objectName === "providerNote" || node.objectName === "historySection" || node.objectName === "providerStatus" || node.objectName === "providerError" || node.objectName === "resetCredits")
@@ -76,10 +77,11 @@ ShellRoot {
     property bool discoveringAccounts: false
     property string accountError: ""
     property var accountEntries: []
+    property var accountRequest: ({})
     signal settingsSaved
     function detectedProviders() { return ["codex", "claude", "gemini"]; }
     function saveSettings(patch, base) { settings = Object.assign({}, settings, patch); settingsSaved(); }
-    function discoverAccounts(config) { accountEntries = [{provider: config.provider, account: "preview@local.invalid"}]; }
+    function discoverAccounts(config) { accountRequest = config; accountEntries = [{provider: config.provider, account: "preview@local.invalid"}]; }
     function noteDemand() {}
     function refreshSoon(force) {}
     function openSite(url) {}

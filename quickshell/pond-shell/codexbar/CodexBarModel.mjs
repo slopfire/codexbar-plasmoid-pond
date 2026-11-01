@@ -233,7 +233,7 @@ export function tag(provider) {
 /** Screen-reader sentence for a tile. */
 export function accessibleLabel(tile, nowMs) {
   if (!tile || !tile.entry) return "CodexBar";
-  const name = providerName(tile.entry.provider);
+  const name = [providerName(tile.entry.provider), tile.entry.account].filter(Boolean).join(", ");
   if (isErrorOnly(tile.entry)) return `${name}, error`;
   const rings = (tile.rings || []).map(r => r.row && Number.isFinite(nowMs)
     ? windowDescription(r.row, nowMs) : r.text).join(", ");

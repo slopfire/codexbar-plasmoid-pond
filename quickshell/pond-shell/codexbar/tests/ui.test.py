@@ -71,6 +71,32 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
           resetsAt: new Date(Date.now() + 86400000).toISOString()}
       ]})];
     }
+    function configureAccounts(): string {
+      let result = {};
+      function walk(node) {
+        if ("editing" in node && "draft" in node) {
+          node.editing = 0;
+          node.selectAccount("selected", ["home@example.com", "work@example.com"]);
+          node.toggleAccount("home@example.com", false);
+          node.toggleAccount("home@example.com", true);
+          result.accounts = node.config.accounts.slice();
+          node.updateProvider("apiKey", "synthetic-key");
+          node.addAccountProfile();
+          result.profile = {key: node.config.apiKey, accounts: node.config.accounts, mode: node.config.accountMode};
+          node.removeProvider();
+          node.editing = 0;
+          return true;
+        }
+        for (const child of node.children || []) if (walk(child)) return true;
+        return false;
+      }
+      walk(drawer);
+      return JSON.stringify(result);
+    }
+    function multiAccountRows() {
+      usage.entries = [Object.assign({}, root.reference[0], {id: "home", account: "home@example.com", accountSelection: true}),
+        Object.assign({}, root.reference[0], {id: "work", account: "work@example.com", accountSelection: true})];
+    }
     function configureProvider() {
       function walk(node) {
         if (node.objectName.startsWith("provider") && "toggled" in node) node.toggled(true);
@@ -157,7 +183,7 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
             tip = next(item for item in report["tree"] if item.get("tooltip") and item["visible"])
             assert tip["width"] == 292 and tip["background"] == "#1d1d1d" and tip["radius"] == 12, tip
             assert tip["contentHeight"] <= tip["availableHeight"] + 1, tip
-            assert tip["heading"] == "Codex" and "\n\n" in tip["text"], tip
+            assert tip["heading"].startswith("Codex") and "example@local.invalid" in tip["heading"] and "\n\n" in tip["text"], tip
             print("ok - tooltip uses Pond colors, rounded corners and a bounded multiline layout")
             print("ok - pointer hover stays translucent and circular pace styles update")
             call("collapse", 1)
@@ -231,6 +257,12 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
             call("clickSettings")
             wait_for(lambda report: report["page"] == "settings" and not report["transitioning"])
             print("ok - the dashboard settings button opens the settings page")
+            accounts = json.loads(call("configureAccounts"))
+            assert sorted(accounts["accounts"]) == ["home@example.com", "work@example.com"], accounts
+            assert accounts["profile"] == {"key": "", "accounts": [], "mode": "active"}, accounts
+            if os.environ.get("CODEXBAR_ACCOUNT_SCREENSHOT"):
+                subprocess.run(["virt-shot", "--out", os.environ["CODEXBAR_ACCOUNT_SCREENSHOT"]], env=env, check=True, capture_output=True)
+            print("ok - selected accounts can be added and removed and a new profile does not copy a key")
             call("editProvider", 2)
             report = wait_for(lambda report: any(item.get("keyField") and item["masked"] for item in report["pages"]))
             print("ok - API provider setup has a masked credential field")
@@ -247,6 +279,11 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
             assert all(report["settings"].get(key) == value for key, value in expected.items()), report
             provider = report["settings"]["providerConfigs"][2]
             assert provider["refreshIntervalSeconds"] == 600 and provider["providerRetryAttempts"] == 4 and provider["failureCooldownSeconds"] == 60, provider
+            assert sorted(report["settings"]["providerConfigs"][0]["accounts"]) == ["home@example.com", "work@example.com"], report
+            call("multiAccountRows")
+            report = wait_for(lambda report: len([item for item in report["tree"] if item.get("accountCaption") and item["visible"]]) == 2)
+            assert {item["text"] for item in report["tree"] if item.get("accountCaption")} == {"home@example.com", "work@example.com"}, report
+            print("ok - separate accounts have visible names in sidebar rows")
             call("error")
             report = wait_for(lambda report: any(item.get("ring") and item["value"] == 100 and item["timeLeft"] == -1 for item in report["tree"]))
             assert all(not item["marker"] for item in report["tree"] if item.get("ring") and item["timeLeft"] == -1), report

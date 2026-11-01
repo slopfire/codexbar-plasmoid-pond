@@ -154,6 +154,18 @@ fn run_usage(args: &[String]) -> anyhow::Result<()> {
                 fetch_provider(provider_id, &http, &home, include_status, timeout, source)
             })
             .collect::<Vec<_>>()
+    } else if provider == "antigravity" {
+        providers::antigravity::fetch_accounts(
+            &http,
+            timeout,
+            source,
+            parsed.get("account").map(String::as_str),
+            parsed
+                .get("account-index")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0),
+            parsed.contains_key("all-accounts"),
+        )
     } else if NATIVE_PROVIDERS.contains(&provider.as_str()) {
         fetch_provider(&provider, &http, &home, include_status, timeout, source)
     } else {

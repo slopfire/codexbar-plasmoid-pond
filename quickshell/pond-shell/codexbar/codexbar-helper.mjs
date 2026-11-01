@@ -12,6 +12,8 @@ import {
   runWithRetries,
 } from "./codexbar-resilience.mjs";
 
+import * as Accounts from "./codexbar-accounts.mjs";
+
 const rawArgs = process.argv.slice(2);
 const args = parseArgs(rawArgs);
 // KDE's plasmoid process inherits the user's session env from systemd --user
@@ -283,7 +285,11 @@ async function main() {
     }
     const command = action === "login"
       ? ["login", "--provider", "antigravity", "--timeout", "300"]
-      : ["logout", "--provider", "antigravity", "--all"];
+      : ["logout", "--provider", "antigravity", "--account", clean(args.account)];
+    if (action === "logout" && !clean(args.account)) {
+      process.stdout.write(JSON.stringify({ok: false, message: "Select one account to sign out"}) + "\n");
+      return;
+    }
     try {
       execFileSync(nativeCliPath, command, {encoding: "utf8", timeout: 320000, maxBuffer: 1024 * 1024, env: process.env});
       process.stdout.write(JSON.stringify({ok: true, message: action === "login" ? "Signed in" : "Signed out"}) + "\n");
@@ -456,7 +462,7 @@ function enrichCodexLimitResetCredits(items, config) {
       const oauthItems = asArray(oauthPayload).filter((candidate) => (
         normalizeProviderId(candidate?.provider) === "codex" && !candidate?.error
       ));
-      const accountLower = account.toLowerCase();
+      const accountLower = Accounts.identity(item).toLowerCase();
       const match = (accountLower
         ? oauthItems.find((candidate) => {
           const candidateAccount = clean(
@@ -466,7 +472,7 @@ function enrichCodexLimitResetCredits(items, config) {
           ).toLowerCase();
           return candidateAccount === accountLower;
         })
-        : null) || oauthItems[0];
+        : oauthItems[0]);
       const resetCredits = match?.usage?.codexResetCredits;
       if (!resetCredits) {
         return item;
@@ -485,6 +491,29 @@ function enrichCodexLimitResetCredits(items, config) {
 }
 
 function runUsageForConfig(config) {
+  if (config._accountSelectionError) {
+    return [{provider: config.provider, source: config.source, error: {message: config._accountSelectionError},
+      _accountSelection: true, profileName: config.profileName}];
+  }
+  let result = asArray(fetchUsageForConfig(config));
+  const resolvedSource = resolveSource(config.provider, config.source);
+  if (normalizeProviderId(config.provider) !== "devin" && normalizeProviderId(config.provider) !== "demo"
+      && (clean(config.account) || Number(config.accountIndex) > 0)
+      && (resolvedSource === "oauth" || resolvedSource.startsWith("native")
+        || result.some(item => item.source === "oauth"))) {
+    result = Accounts.matchingPayload(config, result,
+      normalizeProviderId(config.provider) !== "antigravity" || !resolvedSource.startsWith("native"));
+    if (!result.length) result = [{provider: config.provider, source: resolvedSource,
+      error: {message: "The selected account is not available from this source. Detect accounts or choose another source."}}];
+  }
+  return result.map(item => ({...item,
+    account: item.account || (item.error ? config.account || null : null),
+    profileName: config.profileName || null,
+    _accountSelection: !!config.account || Number(config.accountIndex) > 0 || !!config.profileName || config.allAccounts === true,
+  }));
+}
+
+function fetchUsageForConfig(config) {
   // Built-in sample provider for tray/card UI testing — no CLI or network.
   if (normalizeProviderId(config.provider) === "demo") {
     return [buildDemoUsagePayload(config)];
@@ -565,6 +594,7 @@ function runUsageForSource(config, source) {
   }
 
   const command = commandForConfig(config, source);
+  if (source.startsWith("native")) commandArgs.push("--anonymize-emails", "false");
   try {
     return usageFetch(config, {
       command,
@@ -1191,26 +1221,45 @@ function localPublishProviders() {
 }
 
 async function fetchRemoteEntries() {
-  const providers = new Set();
-  const remoteConfigs = effectiveProviderConfigs().filter((config) => usesRemoteSource(config));
-  const uniqueConfigs = [];
-  for (const config of remoteConfigs) {
-    const providerId = normalizeProviderId(config.provider);
-    if (providers.has(providerId)) {
-      continue;
-    }
-    providers.add(providerId);
-    uniqueConfigs.push(config);
-  }
-  if (uniqueConfigs.length === 0) {
-    return [];
-  }
+  const configs = effectiveProviderConfigs().filter(config => usesRemoteSource(config));
+  const providers = new Map();
   const base = buildSyncUrl();
-  const entries = [];
-  for (const config of uniqueConfigs) {
-    entries.push(...(await remoteEntriesForProvider(config, base)));
+  const entries = new Map();
+  for (const config of configs) {
+    const providerId = normalizeProviderId(config.provider);
+    if (!providers.has(providerId)) {
+      providers.set(providerId, await remoteEntriesForProvider(config, base));
+    }
+    const available = providers.get(providerId);
+    let selected = available;
+    if (config._accountSelectionError) {
+      selected = [remoteUsageErrorEntry(providerId, config._accountSelectionError)];
+    } else if (available.every(entry => !entry.error)) {
+      if (clean(config.account)) {
+        selected = available.filter(entry => clean(entry.account).toLowerCase() === clean(config.account).toLowerCase());
+      } else if (Number(config.accountIndex) > 0) {
+        selected = available.slice(config.accountIndex - 1, config.accountIndex);
+      }
+      if (!selected.length) selected = [remoteUsageErrorEntry(providerId,
+        "The selected account has not been published by the sync server")];
+    }
+    for (const value of selected) {
+      const entry = {...value};
+      if (entry.error && config.account) entry.account = anonymizeEmails ? anonymizeIdentity(config.account) : config.account;
+      if (clean(config.profileName)) {
+        const profile = anonymizeEmails ? anonymizeIdentity(config.profileName) : config.profileName;
+        entry.accountId = crypto.createHash("sha256").update(JSON.stringify([
+          entry.accountId || entry.id || entry.account || entry.source, clean(config.profileName),
+        ])).digest("hex").slice(0, 24);
+        entry.account = profile;
+        entry.profileName = profile;
+      }
+      const key = JSON.stringify([providerId, entry.accountId || entry.id || entry.account || "",
+        entry.error?.message || ""]);
+      entries.set(key, entry);
+    }
   }
-  return entries;
+  return [...entries.values()];
 }
 
 /**
@@ -1330,18 +1379,6 @@ async function remoteEntriesForProvider(config, base) {
           "Nothing published on the sync server for this provider yet",
         ),
       ];
-    }
-    const wantedAccount = clean(config.account).toLowerCase();
-    if (wantedAccount) {
-      const matching = entries.filter(
-        (entry) => clean(entry.account).toLowerCase() === wantedAccount,
-      );
-      // Lenient matching: the server may hold entries under another
-      // publisher's anonymized label; keeping everything beats showing
-      // nothing.
-      if (matching.length > 0) {
-        return matching;
-      }
     }
     return entries;
   } catch (error) {
@@ -1500,20 +1537,27 @@ function normalizeSnapshot(usagePayload, costPayload, costError = null) {
 
   const costEnabled = costEnabledProviders();
 
+  const costAssigned = new Set();
   const entries = asArray(usagePayload).map((item) => {
     const providerId = item.provider || "unknown";
-    const cost = costEnabled.has(normalizeProviderId(providerId))
+    const cost = !costAssigned.has(providerId) && costEnabled.has(normalizeProviderId(providerId))
       ? costByProvider.get(providerId)
       : null;
-    return normalizeProvider(item, cost);
+    if (cost && !item.error) costAssigned.add(providerId);
+    const entry = normalizeProvider(item, item.error ? null : cost);
+    if (cost && entry.tokenUsage && asArray(usagePayload).filter(other => other.provider === providerId).length > 1) {
+      entry.tokenUsage.sessionLabel = "Provider today";
+      entry.tokenUsage.last30DaysLabel = "Provider 30d";
+    }
+    return entry;
   });
 
-  // For each provider, keep only working accounts. If every account failed,
-  // retain a single error entry so the user can see why nothing loaded.
+  // Keep each explicitly selected account, including failures. Collapse only
+  // unselected discovery failures when that provider has working data.
   const visibleByProvider = new Map();
   for (const entry of entries) {
     const bucket = visibleByProvider.get(entry.provider) || { successes: [], firstError: null };
-    if (entry.error) {
+    if (entry.error && !entry.accountSelection) {
       if (!bucket.firstError) bucket.firstError = entry;
     } else {
       bucket.successes.push(entry);
@@ -1550,7 +1594,7 @@ function normalizeSnapshot(usagePayload, costPayload, costError = null) {
       continue;
     }
     if (!successProviders.has(providerId)) {
-      const index = filteredEntries.findIndex((entry) => entry.provider === providerId && entry.error);
+      const index = filteredEntries.findIndex((entry) => entry.provider === providerId && entry.error && !entry.accountSelection);
       if (index >= 0) {
         // The card falls back to local spend because the limits fetch failed.
         // Carry the reason so it can say so instead of looking like a normal
@@ -1611,6 +1655,7 @@ function assignStableEntryIds(entries) {
 
 function stableEntryIdBase(entry) {
   const providerId = clean(entry?.provider) || "unknown";
+  if (entry?.accountId) return `${providerId}:${entry.accountId}`;
   const account = clean(entry?.account);
   if (account) {
     return `${providerId}:${account}`;
@@ -1632,7 +1677,8 @@ function normalizeProvider(item, cost) {
   const rows = usageRows(providerId, usage, source, item.pace || {});
   const dailyUsage = annotateLimitResets(dailyUsagePoints(dashboard, cost), rows);
   const rawAccount = item.account || usage.accountEmail || identity.accountEmail || null;
-  const account = anonymizeEmails ? anonymizeIdentity(rawAccount) : rawAccount;
+  const rawDisplayAccount = clean(item.profileName) || rawAccount;
+  const account = anonymizeEmails ? anonymizeIdentity(rawDisplayAccount) : rawDisplayAccount;
   const rawOrganization = usage.accountOrganization || identity.accountOrganization || null;
   const organization = anonymizeEmails ? anonymizeIdentity(rawOrganization) : rawOrganization;
 
@@ -1662,6 +1708,12 @@ function normalizeProvider(item, cost) {
   return {
     provider: providerId,
     account,
+    accountId: crypto.createHash("sha256").update(JSON.stringify([
+      providerId, clean(item.profileName), String(rawAccount || "").toLowerCase() || source,
+    ])).digest("hex").slice(0, 24),
+    accountAnonymized: account !== rawDisplayAccount,
+    accountSelection: item._accountSelection === true,
+    profileName: clean(item.profileName) ? account : null,
     organization,
     plan: usage.loginMethod || identity.loginMethod || null,
     source,
@@ -2328,6 +2380,9 @@ function parseProviderConfigs(raw) {
       provider: clean(item.provider) || "codex",
       source: clean(item.source) || "auto",
       account: clean(item.account),
+      accounts: Accounts.names(item.accounts),
+      accountMode: clean(item.accountMode),
+      profileName: clean(item.profileName),
       accountIndex: Number(item.accountIndex || 0),
       allAccounts: item.allAccounts === true,
       // Credentials may arrive through stdin. Never accept them in argv JSON.
@@ -2340,7 +2395,7 @@ function parseProviderConfigs(raw) {
       failureCooldownSeconds: Number(item.failureCooldownSeconds) > 0
         ? boundedNumber(item.failureCooldownSeconds, 180, 30, 3600) : 0,
       _fromConfigs: true,
-    }));
+    })).flatMap(Accounts.expand);
 }
 
 function providerConfigInput() {

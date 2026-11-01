@@ -248,11 +248,11 @@ fs.writeFileSync(${JSON.stringify(capture)}, JSON.stringify(process.argv.slice(2
 `, {mode: 0o700});
     for (const action of ["login", "logout"]) {
       const result = spawnSync(process.execPath, [path.join(source, "codexbar-helper.mjs"),
-        "--provider", "antigravity", "--auth-action", action, "--nativeCli", cli], {env, encoding: "utf8"});
+        "--provider", "antigravity", "--auth-action", action, "--account", "work@example.com", "--nativeCli", cli], {env, encoding: "utf8"});
       assert.equal(JSON.parse(result.stdout).ok, true, result.stderr);
       assert.deepEqual(JSON.parse(fs.readFileSync(capture)), action === "login"
         ? ["login", "--provider", "antigravity", "--timeout", "300"]
-        : ["logout", "--provider", "antigravity", "--all"]);
+        : ["logout", "--provider", "antigravity", "--account", "work@example.com"]);
     }
   });
   test("the detached cost worker receives the same provider list through stdin", () => {

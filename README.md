@@ -170,9 +170,29 @@ OpenCode, and OpenCode Go use `native`; Codex, Claude, Augment, Factory, JetBrai
 API providers such as Gemini, OpenAI, Groq, DeepSeek, OpenRouter, and ClinePass use `api`; Vertex AI uses `oauth`;
 Manus, Amp, T3 Chat, and similar browser-session providers use `web`.
 
+In Providers, choose "Follow active account", "All accounts", or "Selected accounts".
+Selected accounts has a checkbox for each detected or saved name. You can add a
+name or email by hand. Uncheck an account to stop showing it. This does not remove
+its saved login or switch the account in the provider's own app.
+
+Use "Add another account profile" for separate API keys or sources. Give each
+profile a label and enter its key. A new profile does not copy the previous key.
+The same controls are available in KDE and Pond. Existing account settings still
+load. A failed selected account remains visible beside accounts that work.
+
+Account support depends on the source. OAuth sources can return only the active
+login. The widget shows an error if that login does not match a selected name.
+Antigravity's Linux helper can read each saved browser login without changing
+the active login. Its sign-out action removes only the selected login, after
+confirmation. Provider-wide cost history appears once when several accounts
+are shown, with "Provider today" and "Provider 30d" labels.
+
 The account fields map to the CodexBar CLI account flags:
 
-- `account`: passes `--account <value>`
+- `accounts`: selected names. The helper fetches each name with `--account`.
+- `accountMode`: `active`, `all`, `selected`, or `index`.
+- `profileName`: the label shown for a separate account profile.
+- `account`: the legacy single-account setting. It still loads.
 - `accountIndex`: passes `--account-index <n>` when `account` is empty and the index is greater than `0`
 - `allAccounts`: passes `--all-accounts`
 
