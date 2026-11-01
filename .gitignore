@@ -6,3 +6,4 @@
 .omo/
 .commandcode/
 .zvec-grep/
+/quickshell/**/__pycache__/

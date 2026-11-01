@@ -1,0 +1,91 @@
+{
+  "ok": true,
+  "generatedAt": "2026-10-31T07:00:00Z",
+  "entries": [
+    {
+      "id": "codex",
+      "provider": "codex",
+      "account": "demo@example.invalid",
+      "plan": "Demo",
+      "source": "demo",
+      "rows": [
+        {
+          "id": "primary",
+          "title": "Session",
+          "percentLeft": 74,
+          "windowMinutes": 300
+        },
+        {
+          "id": "secondary",
+          "title": "Weekly",
+          "percentLeft": 26,
+          "windowMinutes": 10080
+        }
+      ],
+      "creditsRemaining": null,
+      "limitResetCredits": null,
+      "tokenUsage": null,
+      "dailyUsage": [],
+      "error": null,
+      "stale": false,
+      "status": null
+    },
+    {
+      "id": "claude",
+      "provider": "claude",
+      "account": "demo@example.invalid",
+      "plan": "Demo",
+      "source": "demo",
+      "rows": [
+        {
+          "id": "primary",
+          "title": "Session",
+          "percentLeft": 41,
+          "windowMinutes": 300
+        },
+        {
+          "id": "secondary",
+          "title": "Weekly",
+          "percentLeft": 82,
+          "windowMinutes": 10080
+        }
+      ],
+      "creditsRemaining": null,
+      "limitResetCredits": null,
+      "tokenUsage": null,
+      "dailyUsage": [],
+      "error": null,
+      "stale": false,
+      "status": null
+    },
+    {
+      "id": "gemini",
+      "provider": "gemini",
+      "account": "demo@example.invalid",
+      "plan": "Demo",
+      "source": "demo",
+      "rows": [
+        {
+          "id": "primary",
+          "title": "Session",
+          "percentLeft": 63,
+          "windowMinutes": 300
+        },
+        {
+          "id": "secondary",
+          "title": "Weekly",
+          "percentLeft": 18,
+          "windowMinutes": 10080
+        }
+      ],
+      "creditsRemaining": null,
+      "limitResetCredits": null,
+      "tokenUsage": null,
+      "dailyUsage": [],
+      "error": null,
+      "stale": false,
+      "status": null
+    }
+  ],
+  "costError": null
+}

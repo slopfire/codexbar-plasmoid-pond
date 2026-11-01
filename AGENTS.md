@@ -66,6 +66,13 @@ PATH=/tmp/codexbar-plasma-mock:$PATH \
 ./scripts/run-windowed.sh --allow-host-window
 ```
 
+## Quickshell and Pond
+
+The tracked Pond integration is under `quickshell/`. Read
+`quickshell/AGENTS.md` for its QML and install rules. Check it with
+`./scripts/quickshell.sh check --ui` and
+`python3 -m unittest discover -s quickshell/tests`.
+
 ## Package facts
 
 | | |

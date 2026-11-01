@@ -3,6 +3,7 @@
 ![CodexBar Plasmoid Screenshot](assets/screenshot.png)
 
 This repository provides a Plasma 6 widget for the [CodexBar](https://github.com/steipete/CodexBar) CLI.
+A Quickshell integration for the Pond sidebar is also available under [`quickshell/`](quickshell/README.md).
 The plasmoid shells out to the CLI instead of duplicating provider logic, then renders usage limits,
 credits, status, local token costs, and recent history with native Plasma/Kirigami controls.
 
@@ -47,6 +48,26 @@ Agent / CI-style checks (virtual KWin, no host desktop interruption):
 ./scripts/agent-check.sh
 ./scripts/run-config-smoke.sh
 ```
+
+## Quickshell and Pond
+
+Install the CodexBar module into an existing Pond shell:
+
+```sh
+./scripts/install-quickshell.sh
+codexbar-pond settings
+```
+
+The installer builds the Linux helper, preserves other Pond components and
+settings, and backs up every file it changes. Rerun it after pulling updates.
+Use `codexbar-pond toggle`, `refresh`, or `start` to control the integration.
+
+```sh
+./scripts/quickshell.sh preview --virtual
+./scripts/quickshell.sh check --ui
+```
+
+See [Quickshell setup, settings and restore instructions](quickshell/README.md).
 
 ## Package for release
 

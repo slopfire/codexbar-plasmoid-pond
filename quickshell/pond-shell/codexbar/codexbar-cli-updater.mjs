@@ -1,0 +1,1 @@
+../../../plasmoid/contents/code/codexbar-cli-updater.mjs
