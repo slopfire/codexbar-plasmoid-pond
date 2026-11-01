@@ -5,6 +5,14 @@ Plasma 6 widget or the Pond Quickshell sidebar. Both use the
 [CodexBar CLI](https://github.com/steipete/CodexBar) and a bundled Linux helper
 to fetch provider data.
 
+## Screenshots
+
+### Plasma 6
+
+![CodexBar Plasma widget with usage limits and the provider dashboard](assets/screenshot.png)
+
+### Pond
+
 ![CodexBar in Pond with usage rings and the provider dashboard](assets/pond-screenshot.png)
 
 ## What it shows
@@ -31,6 +39,15 @@ Pond can place several limit windows in nested rings, with the shortest window
 outside. Set ring size, width and gap, and choose which icons and labels to
 show. Tooltips and keyboard focus retain the usage details when labels are
 hidden. If all windows do not fit, an exhausted window takes priority.
+
+Appearance settings can apply to all providers or one provider. Each provider
+can override ring layout, size, labels and pace markers. Unchanged settings
+use the shared defaults. Use **Use defaults for this provider** to remove its
+overrides. These settings apply to all accounts of that provider.
+
+Ring colors can use automatic warnings, the provider color, remaining usage,
+usage pace or the Pond text color. You can set a custom provider color with a
+`#RRGGBB` value. Provider-colored pace markers use that color too.
 
 Pond also has per-provider refresh intervals, retry attempts and failure
 cooldowns. Cross-device sync setup and selecting several providers in one
