@@ -31,11 +31,11 @@ Item {
       stroke: modelData.stroke
       markerExtent: 0
       value: gauge.value
-      color: Model.sidebarRingColor(root.entry, gauge.row, root.theme)
+      color: Model.sidebarRingColor(root.entry, gauge.row, root.theme, root.settings)
       trackColor: root.settings.showRingTrack === false ? "transparent" : root.theme.track
       timeLeft: Model.windowLeft(gauge.row, root.nowMs)
       markerStyle: root.markerStyle
-      tickColor: Model.paceMarkerColor(gauge.row, root.entry, markerStyle, root.theme, root.nowMs)
+      tickColor: Model.paceMarkerColor(gauge.row, root.entry, markerStyle, root.theme, root.nowMs, root.settings)
     }
   }
   ProviderIcon {

@@ -36,7 +36,8 @@ ShellRoot {
         background: String(node.children[0].color), alpha: node.children[0].color.a});
       if ("hasMarker" in node) out.push({ring: true, provider: providerOf(node), value: node.value, timeLeft: node.timeLeft,
         marker: node.hasMarker, style: node.markerStyle, visible: node.visible, size: node.size,
-        stroke: node.stroke, track: String(node.trackColor), extent: node.markerExtent});
+        stroke: node.stroke, color: String(node.color), tick: String(node.tickColor),
+        track: String(node.trackColor), extent: node.markerExtent});
       if (node.objectName === "ringStack") out.push({stack: true, provider: node.entry?.provider, visible: node.visible,
         geometry: node.geometry, count: node.rings.length, width: node.width, height: node.height});
       if (node.objectName === "sidebarProviderIcon") out.push({sidebarIcon: true, visible: node.visible});

@@ -495,11 +495,28 @@ export function windowLabel(row) {
   return String(row?.label || row?.title || row?.id || "Usage");
 }
 
-export function sidebarRingColor(entry, row, theme) {
-  if (isErrorOnly(entry) || row && (row.percentLeft <= 20 || paceVerdict(row) === "runs dry"))
+export function sidebarRingColor(entry, row, theme, settings = {}) {
+  if (isErrorOnly(entry)) return theme.red;
+  if (settings.ringColorMode === "provider") return ringProviderColor(entry, theme, settings);
+  if (settings.ringColorMode === "theme") return theme.ink;
+  if (settings.ringColorMode === "threshold") return percentColor(row ? row.percentLeft : 100, theme);
+  if (settings.ringColorMode === "pace") {
+    const verdict = paceVerdict(row);
+    if (verdict === "runs dry") return theme.red;
+    if (verdict === "tight") return theme.yellow;
+    if (verdict === "lasts") return theme.ink;
+    return percentColor(row ? row.percentLeft : 100, theme);
+  }
+  if (row && (row.percentLeft <= 20 || paceVerdict(row) === "runs dry"))
     return theme.red;
   if (row && paceVerdict(row) === "tight") return theme.yellow;
   return theme.ink;
+}
+
+export function ringProviderColor(entry, theme, settings = {}) {
+  const custom = settings.ringProviderColor;
+  return typeof custom === "string" && /^#[0-9a-f]{6}$/i.test(custom)
+    ? custom : providerColor(entry?.provider, theme.ink);
 }
 
 /** The provider the compact bar shows: the tightest live one, else the first failed. */
@@ -620,9 +637,9 @@ export function windowDescription(row, nowMs, locale) {
   return parts.join(", ");
 }
 
-export function paceMarkerColor(row, entry, style, theme, nowMs) {
-  if (style === "bar") return sidebarRingColor(entry, row, theme);
-  if (style === "provider") return providerColor(entry?.provider);
+export function paceMarkerColor(row, entry, style, theme, nowMs, settings = {}) {
+  if (style === "bar") return sidebarRingColor(entry, row, theme, settings);
+  if (style === "provider") return ringProviderColor(entry, theme, settings);
   if (style === "theme" || style === "gaps") return theme.ink;
   return percentColor(windowLeft(row, nowMs) * 100, theme);
 }

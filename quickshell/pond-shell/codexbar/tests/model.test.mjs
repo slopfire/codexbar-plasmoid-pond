@@ -190,6 +190,37 @@ test("sidebar colour reserves red for low or exhausted budgets", () => {
   } }, theme), theme.red);
 });
 
+test("ring color modes use provider, remaining usage, pace or theme colors", () => {
+  const row = {percentLeft: 40};
+  const color = (mode, value = row) => Model.sidebarRingColor(entry(), value, theme, {ringColorMode: mode});
+  assert.equal(color("provider"), Model.providerColor("codex"));
+  assert.equal(color("theme", {percentLeft: 0}), theme.ink);
+  assert.equal(color("threshold"), Model.percentColor(40, theme));
+  assert.equal(color("pace"), Model.percentColor(40, theme));
+  for (const [pace, expected] of [
+    [{expectedUsedPercent: 50, deltaPercent: 5, willLastToReset: false}, theme.red],
+    [{expectedUsedPercent: 50, deltaPercent: -5, willLastToReset: true}, theme.yellow],
+    [{expectedUsedPercent: 50, deltaPercent: -20, willLastToReset: true}, theme.ink],
+    [{expectedUsedPercent: 4, deltaPercent: 5, willLastToReset: false}, Model.percentColor(40, theme)]
+  ]) assert.equal(color("pace", {...row, pace}), expected);
+  for (const mode of ["auto", "provider", "threshold", "pace", "theme"]) {
+    assert.equal(Model.sidebarRingColor(entry({error: {message: "Offline"}}), null, theme,
+      {ringColorMode: mode}), theme.red);
+    assert.ok(Model.sidebarRingColor(entry({creditsRemaining: 1}), null, theme, {ringColorMode: mode}));
+  }
+});
+
+test("custom provider colors apply to rings and matching pace markers", () => {
+  const settings = {ringColorMode: "provider", ringProviderColor: "#123aBC"};
+  const row = {percentLeft: 18};
+  assert.equal(Model.sidebarRingColor(entry(), row, theme, settings), "#123aBC");
+  for (const style of ["bar", "provider"])
+    assert.equal(Model.paceMarkerColor(row, entry(), style, theme, now, settings), "#123aBC");
+  assert.equal(Model.paceMarkerColor(row, entry(), "theme", theme, now, settings), theme.ink);
+  for (const invalid of ["", "red", "#123", "#12345678", "#gggggg", null])
+    assert.equal(Model.ringProviderColor(entry(), theme, {ringProviderColor: invalid}), Model.providerColor("codex"));
+});
+
 test("accessible usage includes window labels and stale status", () => {
   const item = entry({ stale: true, rows: [{ percentLeft: 74, windowMinutes: 300 }] });
   assert.equal(Model.accessibleLabel({ entry: item, rings: Model.sidebarRings(item, 2) }),

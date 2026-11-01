@@ -49,11 +49,11 @@ FocusScope {
     height: width
     stroke: root.settings.ringWidth || 2
     value: root.tile?.rings?.[0]?.value || 0
-    color: Model.sidebarRingColor(root.entry, root.row, root.theme)
+    color: Model.sidebarRingColor(root.entry, root.row, root.theme, root.settings)
     trackColor: root.settings.showRingTrack === false ? "transparent" : root.theme.track
     timeLeft: Model.windowLeft(root.row, root.nowMs)
     markerStyle: root.markerStyle
-    tickColor: Model.paceMarkerColor(root.row, root.entry, markerStyle, root.theme, root.nowMs)
+    tickColor: Model.paceMarkerColor(root.row, root.entry, markerStyle, root.theme, root.nowMs, root.settings)
     ProviderIcon {
       objectName: "sidebarProviderIcon"
       visible: root.settings.showProviderIcon !== false

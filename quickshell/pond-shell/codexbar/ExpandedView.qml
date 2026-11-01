@@ -184,11 +184,11 @@ Item {
                 height: width
                 stroke: line.settings.ringWidth || 2
                 value: gauge.modelData.value
-                color: Model.sidebarRingColor(line.entry, gauge.modelData.row, root.theme)
+                color: Model.sidebarRingColor(line.entry, gauge.modelData.row, root.theme, line.settings)
                 trackColor: line.settings.showRingTrack === false ? "transparent" : root.theme.track
                 timeLeft: Model.windowLeft(gauge.modelData.row, root.state.nowMs)
                 markerStyle: line.settings.paceIndicatorStyle || "position"
-                tickColor: Model.paceMarkerColor(gauge.modelData.row, line.entry, markerStyle, root.theme, root.state.nowMs)
+                tickColor: Model.paceMarkerColor(gauge.modelData.row, line.entry, markerStyle, root.theme, root.state.nowMs, line.settings)
                 Text {
                   objectName: "ringValue"
                   visible: line.settings.showRingValues !== false

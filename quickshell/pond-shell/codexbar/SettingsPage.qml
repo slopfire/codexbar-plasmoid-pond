@@ -36,6 +36,7 @@ Item {
 
   function patch(key, value) { const next = Object.assign({}, draft); next[key] = value; draft = next; }
   function patchAppearance(key, value) {
+    validationError = "";
     if (!appearanceProvider) { patch(key, value); return; }
     const overrides = Settings.clone(draft.providerAppearance || {});
     overrides[appearanceProvider] = Object.assign({}, overrides[appearanceProvider] || {}, {[key]: value});
@@ -105,7 +106,7 @@ Item {
       "autoUpdateCli", "cost", "credits", "anonymizeEmail", "cardBars", "expandedRows", "expanded", "history", "includeStatus",
       "costRefreshIntervalSeconds", "shareProviderFetches", "providerRetryAttempts", "failureCooldownSeconds",
       "costScanTimeoutSeconds", "providerAppearance", "paceIndicatorStyle", "ringLayout", "nestedRingWidth", "ringSize", "ringWidth", "ringGap",
-      "showProviderIcon", "showProviderName", "showRingValues", "showWindowLabels", "showRingTrack"])
+      "showProviderIcon", "showProviderName", "showRingValues", "showWindowLabels", "showRingTrack", "ringColorMode", "ringProviderColor"])
       if (draft[key] !== undefined) update[key] = draft[key];
     try { Settings.validate(update); }
     catch (error) { validationError = error.message; return; }
@@ -224,6 +225,39 @@ Item {
           interactive: !!root.draft.providerAppearance?.[root.appearanceProvider]
           onClicked: root.resetAppearance()
         }
+        Text { text: "Ring color"; color: "white"; opacity: 0.6; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+        SettingChoice {
+          objectName: "appearanceRingColorMode"
+          width: parent.width
+          value: root.appearance.ringColorMode || "auto"
+          options: [{value: "auto", label: "Automatic warnings"}, {value: "provider", label: "Provider color"},
+            {value: "threshold", label: "Remaining usage"}, {value: "pace", label: "Usage pace"},
+            {value: "theme", label: "Theme text color"}]
+          Accessible.name: "Ring color mode"
+          onPicked: value => root.patchAppearance("ringColorMode", value)
+        }
+        Column {
+          width: parent.width; spacing: 8
+          visible: root.appearance.ringColorMode === "provider" || root.appearance.paceIndicatorStyle === "provider"
+          Text { text: "Custom provider color"; color: "white"; opacity: 0.6; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+          Row {
+            width: parent.width; spacing: 8
+            Rectangle {
+              width: 40; height: 40; radius: 10
+              color: Model.ringProviderColor({provider: root.appearanceProvider}, {ink: String(Shell.Theme.sidebarV3Foreground)}, root.appearance)
+              border.width: 1; border.color: Shell.PanelStyle.border
+            }
+            Shell.Field {
+              objectName: "appearanceRingProviderColor"
+              width: parent.width - 48
+              text: root.appearance.ringProviderColor || ""
+              placeholderText: "#RRGGBB"
+              Accessible.name: "Custom provider color"
+              onTextChanged: if ((root.appearance.ringProviderColor || "") !== text.trim()) root.patchAppearance("ringProviderColor", text.trim())
+            }
+          }
+          Text { width: parent.width; text: "Applies to provider-colored rings and pace markers. Leave blank for the built-in color."; color: "white"; opacity: 0.5; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+        }
         Text { text: "Ring layout"; color: "white"; opacity: 0.6; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
         SettingChoice {
           width: parent.width
@@ -266,7 +300,7 @@ Item {
         Text { width: parent.width; text: "0 shows all providers. Extra providers appear as a count."; color: "white"; opacity: 0.5; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
         SettingToggle { width: parent.width; text: "Start with provider rows"; checked: root.draft.expanded !== false; onToggled: value => root.patch("expanded", value) }
         SettingToggle { width: parent.width; text: "Show daily spend chart"; checked: root.draft.history !== false; onToggled: value => root.patch("history", value) }
-        Text { width: parent.width; text: "Colors and fonts follow the Pond theme."; color: "white"; opacity: 0.5; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+        Text { width: parent.width; text: "Other colors and fonts follow the Pond theme."; color: "white"; opacity: 0.5; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
       }
       Column {
         width: parent.width; spacing: 10

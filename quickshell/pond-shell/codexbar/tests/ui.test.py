@@ -124,6 +124,36 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
       walk(drawer);
       return JSON.stringify(result);
     }
+    function configureRingColors(provider: string, color: string): string {
+      let result = {};
+      function walk(node) {
+        if ("appearanceProvider" in node && "draft" in node) {
+          function control(item, name) {
+            if (item.objectName === name) return item;
+            for (const child of item.children || []) {
+              const found = control(child, name);
+              if (found) return found;
+            }
+            return null;
+          }
+          node.editing = -1;
+          node.tab = 2;
+          control(node, "appearanceProvider").picked(provider);
+          control(node, "appearanceRingColorMode").picked("provider");
+          const field = control(node, "appearanceRingProviderColor");
+          field.focusEditor();
+          input.keyClick(Qt.Key_A, Qt.ControlModifier);
+          input.keyClick(Qt.Key_Backspace);
+          for (const character of color) input.keyClick(character);
+          result = {mode: node.appearance.ringColorMode, color: node.appearance.ringProviderColor, error: node.error};
+          return true;
+        }
+        for (const child of node.children || []) if (walk(child)) return true;
+        return false;
+      }
+      walk(drawer);
+      return JSON.stringify(result);
+    }
     function configureProvider() {
       function walk(node) {
         if (node.objectName.startsWith("provider") && "toggled" in node) node.toggled(true);
@@ -250,6 +280,22 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
             report = wait_for(lambda report: len([item for item in report["tree"] if item.get("stack") and item["visible"]]) == 3)
             assert all(item["stroke"] == 3 for item in report["tree"] if item.get("ring") and item["visible"]), report
             print("ok - provider appearance overrides stay separate in rows and rails and reset to defaults")
+            for layout in ["separate", "nested"]:
+                call("appearance", json.dumps({"ringLayout": layout, "ringColorMode": "provider",
+                    "paceIndicatorStyle": "bar", "providerAppearance": {"codex": {"ringProviderColor": "#123abc"}}}))
+                report = wait_for(lambda report: any(item.get("ring") and item["visible"] and item["provider"] == "codex"
+                    and item["color"] == "#123abc" for item in report["tree"]))
+                for tree in [report["tree"], report["railTree"]]:
+                    rings = [item for item in tree if item.get("ring") and item["visible"]]
+                    for provider, color in [("codex", "#123abc"), ("claude", "#b57861"), ("gemini", "#8972b5")]:
+                        selected = [item for item in rings if item["provider"] == provider]
+                        assert selected and all(item["color"] == color and item["tick"] == color for item in selected), selected
+                call("collapse", 1)
+                report = wait_for(lambda report: any(item.get("ring") and item["visible"] and item["provider"] == "codex"
+                    and item["color"] == "#123abc" for item in report["tree"]))
+                call("collapse", 0)
+            call("appearance", json.dumps({"ringColorMode": "auto", "providerAppearance": {}, "paceIndicatorStyle": "position"}))
+            print("ok - custom and built-in provider colors render in rows, tiles and rails with matching markers")
             call("appearance", json.dumps({"nestedRingWidth": "decreasing"}))
             report = wait_for(lambda report: all(item["geometry"][0]["stroke"] > item["geometry"][1]["stroke"]
                 for item in report["tree"] if item.get("stack") and item["visible"]))
@@ -325,6 +371,14 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
             assert appearance["overrides"] == {"codex": {"ringWidth": 5}, "claude": {"ringWidth": 1}}, appearance
             appearance = json.loads(call("configureAppearance", "codex", 0, "true"))
             assert appearance["width"] == 3 and appearance["overrides"] == {"claude": {"ringWidth": 1}}, appearance
+            colors = json.loads(call("configureRingColors", "codex", "#bad"))
+            assert colors == {"mode": "provider", "color": "#bad", "error": ""}, colors
+            call("applySettings")
+            assert json.loads(call("report"))["page"] == "settings"
+            colors = json.loads(call("configureRingColors", "codex", "#123abc"))
+            assert colors == {"mode": "provider", "color": "#123abc", "error": ""}, colors
+            if os.environ.get("CODEXBAR_COLOR_SCREENSHOT"):
+                subprocess.run(["virt-shot", "--out", os.environ["CODEXBAR_COLOR_SCREENSHOT"]], env=env, check=True, capture_output=True)
             call("applySettings")
             report = wait_for(lambda report: report["page"] == "drawer" and not report["transitioning"])
             expected = {"includeStatus": False, "shareProviderFetches": False, "costRefreshIntervalSeconds": 7200,
@@ -333,7 +387,9 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
                         "ringSize": 40, "ringWidth": 3, "ringGap": 2, "showProviderIcon": False,
                         "showProviderName": False, "showRingValues": False, "showWindowLabels": False, "showRingTrack": False}
             assert all(report["settings"].get(key) == value for key, value in expected.items()), report
-            assert report["settings"]["providerAppearance"] == {"claude": {"ringWidth": 1}}, report
+            assert report["settings"]["providerAppearance"] == {"claude": {"ringWidth": 1},
+                "codex": {"ringColorMode": "provider", "ringProviderColor": "#123abc"}}, report
+            print("ok - custom color text entry validates and Apply saves provider color overrides")
             print("ok - provider selector, ring width and default reset controls save separate appearance settings")
             provider = report["settings"]["providerConfigs"][2]
             assert provider["refreshIntervalSeconds"] == 600 and provider["providerRetryAttempts"] == 4 and provider["failureCooldownSeconds"] == 60, provider

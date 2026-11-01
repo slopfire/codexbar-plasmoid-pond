@@ -75,6 +75,12 @@ for this provider** to remove its changes. The provider editor also has a
 button that opens these controls. Sidebar row count, initial layout and the
 history chart apply to all providers.
 
+Ring colors can use automatic warnings, the provider color, remaining usage,
+usage pace or the Pond text color. Automatic warnings keep the previous Pond
+behavior. The provider color accepts a custom `#RRGGBB` value. Leave it blank
+for the built-in provider color. Provider-colored pace markers use the same
+custom color. Each provider can override the default color settings.
+
 Provider details show status descriptions and links, reset-credit expiry,
 partial refresh errors and incomplete-history notes. The daily chart uses
 spend when available, or tokens for a token-only series. Hover, click or focus

@@ -67,6 +67,25 @@ try {
       for (const value of [0, "false", null]) assert.throws(() => Settings.validate({[key]: value}));
     }
   });
+  test("ring color settings validate and inherit per provider", () => {
+    for (const ringColorMode of ["auto", "provider", "threshold", "pace", "theme"])
+      Settings.validate({ringColorMode, providerAppearance: {codex: {ringColorMode}}});
+    for (const ringProviderColor of ["", "#123456", "#abCD01"])
+      Settings.validate({ringProviderColor, providerAppearance: {codex: {ringProviderColor}}});
+    for (const key of ["ringColorMode", "ringProviderColor"])
+      for (const value of [null, false, 1, "unknown", "#123", "#12345678", "#gggggg"])
+        for (const patch of [{[key]: value}, {providerAppearance: {codex: {[key]: value}}}])
+          assert.throws(() => Settings.validate(patch));
+    const settings = {ringColorMode: "threshold", ringProviderColor: "#abcdef",
+      providerAppearance: {codex: {ringColorMode: "provider", ringProviderColor: ""}}};
+    assert.equal(Settings.appearance(settings, "codex").ringColorMode, "provider");
+    assert.equal(Settings.appearance(settings, "codex").ringProviderColor, "");
+    assert.equal(Settings.appearance(settings, "claude").ringColorMode, "threshold");
+    assert.equal(Settings.appearance(settings, "claude").ringProviderColor, "#abcdef");
+    const result = save({patch: settings});
+    assert.equal(result.result.ok, true);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file)).providerAppearance, settings.providerAppearance);
+  });
   test("provider appearance inherits defaults and keeps overrides separate", () => {
     const settings = {ringWidth: 2, ringGap: 1, showProviderIcon: true,
       providerAppearance: {codex: {ringWidth: 5, ringGap: 0, showProviderIcon: false}}};

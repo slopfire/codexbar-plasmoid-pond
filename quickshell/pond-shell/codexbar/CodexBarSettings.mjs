@@ -474,7 +474,8 @@ export function refreshInterval(settings, detected) {
   return intervals.length ? Math.min(...intervals) : fallback;
 }
 export const appearanceKeys = ["cardBars", "ringLayout", "nestedRingWidth", "ringSize", "ringWidth", "ringGap",
-  "showProviderIcon", "showProviderName", "showRingValues", "showWindowLabels", "showRingTrack", "paceIndicatorStyle"];
+  "showProviderIcon", "showProviderName", "showRingValues", "showWindowLabels", "showRingTrack", "paceIndicatorStyle",
+  "ringColorMode", "ringProviderColor"];
 
 export function appearance(settings, provider) {
   const id = Accounts.normalizeProvider(provider);
@@ -507,6 +508,11 @@ export function validate(patch) {
   }
   if (patch.paceIndicatorStyle !== undefined && !["position", "bar", "provider", "theme", "gaps", "off"].includes(patch.paceIndicatorStyle))
     throw new Error("Choose a pace indicator style");
+  if (patch.ringColorMode !== undefined && !["auto", "provider", "threshold", "pace", "theme"].includes(patch.ringColorMode))
+    throw new Error("Choose a ring color mode");
+  if (patch.ringProviderColor !== undefined && (typeof patch.ringProviderColor !== "string"
+    || patch.ringProviderColor !== "" && !/^#[0-9a-f]{6}$/i.test(patch.ringProviderColor)))
+    throw new Error("Enter a provider color as #RRGGBB, or leave it blank");
   if (patch.providerAppearance !== undefined) {
     const overrides = patch.providerAppearance;
     if (!overrides || typeof overrides !== "object" || Array.isArray(overrides))
