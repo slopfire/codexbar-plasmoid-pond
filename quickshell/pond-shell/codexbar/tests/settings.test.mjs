@@ -34,6 +34,23 @@ try {
     assert.throws(() => Settings.validate({refreshIntervalSeconds: 1}));
     assert.throws(() => Settings.validate({providerConfigs: [{provider: "cli", source: "auto"}]}));
   });
+  test("fetch controls accept bounds and reject invalid settings", () => {
+    for (const [key, min, max] of [["refreshIntervalSeconds",60,86400], ["timeoutSeconds",5,300],
+      ["costRefreshIntervalSeconds",300,604800], ["providerRetryAttempts",1,4],
+      ["failureCooldownSeconds",30,3600], ["costScanTimeoutSeconds",60,1800]]) {
+      for (const value of [min, max]) assert.equal(Settings.validate({[key]: value})[key], value);
+      for (const value of [min - 1, max + 1, min + 0.5, String(min), null])
+        assert.throws(() => Settings.validate({[key]: value}), key + " " + value);
+    }
+    for (const key of ["includeStatus", "shareProviderFetches"]) {
+      for (const value of [true, false]) assert.equal(Settings.validate({[key]: value})[key], value);
+      for (const value of [0, 1, "false", null]) assert.throws(() => Settings.validate({[key]: value}));
+    }
+    for (const value of ["position", "bar", "provider", "theme", "gaps", "off"])
+      assert.equal(Settings.validate({paceIndicatorStyle: value}).paceIndicatorStyle, value);
+    for (const value of ["unknown", "", null, true])
+      assert.throws(() => Settings.validate({paceIndicatorStyle: value}));
+  });
   test("settings save atomically with private permissions and retain unknown keys", () => {
     fs.mkdirSync(path.dirname(file), {recursive: true});
     fs.writeFileSync(file, JSON.stringify({otherClient: {value: 7}}));

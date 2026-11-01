@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls as Controls
 import "CodexBarModel.mjs" as Model
 import ".." as Shell
 
@@ -10,6 +11,7 @@ FocusScope {
   required property bool compact
   required property var theme
   required property real nowMs
+  property string markerStyle: "position"
   signal clicked
 
   readonly property var entry: tile ? tile.entry : null
@@ -17,7 +19,14 @@ FocusScope {
   readonly property bool failed: Model.isErrorOnly(entry)
   activeFocusOnTab: true
   Accessible.role: Accessible.Button
-  Accessible.name: Model.accessibleLabel(tile)
+  Accessible.name: Model.accessibleLabel(tile, nowMs)
+  Controls.ToolTip {
+    id: tileTip
+    visible: pointer.hovered || root.activeFocus
+    delay: 500
+    text: root.Accessible.name
+    contentItem: Text { text: tileTip.text; font: tileTip.font; color: tileTip.palette.toolTipText; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+  }
   Accessible.onPressAction: root.clicked()
   Keys.onReturnPressed: root.clicked()
   Keys.onSpacePressed: root.clicked()
@@ -36,9 +45,12 @@ FocusScope {
     width: 28
     height: 28
     stroke: 2
-    value: root.row ? Number(root.row.percentLeft) : 0
+    value: root.tile?.rings?.[0]?.value || 0
     color: Model.sidebarRingColor(root.entry, root.row, root.theme)
     trackColor: root.theme.track
+    timeLeft: Model.windowLeft(root.row, root.nowMs)
+    markerStyle: root.markerStyle
+    tickColor: Model.paceMarkerColor(root.row, root.entry, markerStyle, root.theme, root.nowMs)
     ProviderIcon {
       anchors.centerIn: parent
       provider: root.entry ? String(root.entry.provider) : ""

@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls as Controls
 import "CodexBarModel.mjs" as Model
 import ".." as Shell
 
@@ -27,12 +28,19 @@ Item {
   readonly property string verdict: Model.paceVerdict(row)
   readonly property color fillColor: Model.barColor(row, theme)
   readonly property string verdictText: verdict === "runs dry" ? "runs dry"
-      : verdict === "tight" ? "tight" : ""
+      : verdict === "tight" ? "tight" : verdict === "lasts" ? "lasts" : ""
 
   implicitHeight: wide ? caption.y + caption.implicitHeight : bar.y + bar.height
   Accessible.role: Accessible.ProgressBar
-  Accessible.name: (row ? row.title || Model.windowLabel(row) : "") + " " + Math.round(percentLeft)
-      + "% remaining" + (reset !== "" ? ", " + reset : "")
+  Accessible.name: Model.windowDescription(row, nowMs, Qt.locale().name)
+  Controls.ToolTip {
+    id: barTip
+    visible: hover.hovered
+    delay: 500
+    text: root.Accessible.name
+    contentItem: Text { text: barTip.text; font: barTip.font; color: barTip.palette.toolTipText; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+  }
+  HoverHandler { id: hover }
 
   Text {
     id: title

@@ -231,11 +231,12 @@ export function tag(provider) {
 }
 
 /** Screen-reader sentence for a tile. */
-export function accessibleLabel(tile) {
+export function accessibleLabel(tile, nowMs) {
   if (!tile || !tile.entry) return "CodexBar";
   const name = providerName(tile.entry.provider);
   if (isErrorOnly(tile.entry)) return `${name}, error`;
-  const rings = (tile.rings || []).map(r => r.text).join(", ");
+  const rings = (tile.rings || []).map(r => r.row && Number.isFinite(nowMs)
+    ? windowDescription(r.row, nowMs) : r.text).join(", ");
   const status = stateText(tile.entry);
   return [name, status, rings || "no usage"].filter(Boolean).join(", ");
 }
@@ -303,14 +304,15 @@ export function spendOf(entry) {
 /** Monthly reset credits left ({availableCount, nextExpiresAt}) or null. */
 export function resetCreditsOf(entry) {
   const credits = entry ? entry.limitResetCredits : null;
-  const count = credits ? Number(credits.availableCount) : NaN;
-  return Number.isFinite(count) && count > 0 ? credits : null;
+  const raw = credits?.availableCount;
+  const count = typeof raw === "number" || typeof raw === "string" && raw.trim() !== "" ? Number(raw) : NaN;
+  return Number.isFinite(count) && count >= 0 ? credits : null;
 }
 
 /** A failed provider row: an error and nothing else to draw. */
 export function isErrorOnly(entry) {
   return !!entry && !!entry.error && rowsOf(entry).length === 0
-    && spendOf(entry) === null && creditsOf(entry) === null;
+    && spendOf(entry) === null && creditsOf(entry) === null && resetCreditsOf(entry) === null;
 }
 
 /** The lowest remaining percent across an entry's windows, or null. */
@@ -399,7 +401,7 @@ export function rings(entry, count) {
   if (resets && list.length < limit) {
     const value = Number(resets.availableCount);
     // Resets are counted in units, not a percent: a full ring per reset, capped.
-    list.push({ kind: "resets", row: null, value: 100, text: String(Math.round(value)) });
+    list.push({ kind: "resets", row: null, value: value > 0 ? 100 : 0, text: String(Math.round(value)) });
   }
   const credits = creditsOf(entry);
   if (credits !== null && list.length < limit) {
@@ -516,8 +518,8 @@ export function stateText(entry) {
 
 /** Body text for a failed provider: the error message, clipped. */
 export function errorText(entry, limit) {
-  const error = entry && entry.error;
-  const message = String((error && error.message) || "Could not read usage");
+  const error = entry && (entry.error || entry.lastAttemptError);
+  const message = String((error && (error.message || error.description)) || "Could not read usage");
   const max = limit || 160;
   return message.length > max ? `${message.slice(0, max - 1)}…` : message;
 }
@@ -528,17 +530,18 @@ export function errorText(entry, limit) {
  */
 export function paceVerdict(row) {
   const pace = row ? row.pace : null;
-  if (!pace) {
+  if (!pace || typeof pace.willLastToReset !== "boolean"
+      && !(typeof pace.deltaPercent === "number" && Number.isFinite(pace.deltaPercent))) {
     return "";
   }
-  const expected = Number(pace.expectedUsedPercent);
+  const expected = pace.expectedUsedPercent === null ? NaN : Number(pace.expectedUsedPercent);
   if (Number.isFinite(expected) && expected < 10) {
     return "";
   }
   if (pace.willLastToReset === false) {
     return "runs dry";
   }
-  const delta = Number(pace.deltaPercent);
+  const delta = pace.deltaPercent === null ? NaN : Number(pace.deltaPercent);
   if (Number.isFinite(delta) && delta > -10) {
     return "tight";
   }
@@ -547,7 +550,7 @@ export function paceVerdict(row) {
 
 /** Fraction of the window still ahead, 0..1, or -1 when unknown. */
 export function windowLeft(row, nowMs) {
-  if (!row || !row.resetsAt) {
+  if (!row || !row.resetsAt || !Number.isFinite(nowMs)) {
     return -1;
   }
   const minutes = Number(row.windowMinutes);
@@ -563,6 +566,45 @@ export function windowLeft(row, nowMs) {
     return -1;
   }
   return Math.max(0, left);
+}
+
+/** A ring and its time marker both measure the remaining part of a window. */
+export function windowDescription(row, nowMs, locale) {
+  if (!row) return "";
+  const parts = [`${row.title || windowLabel(row)} window`, `${Math.round(row.percentLeft)}% remaining`];
+  const time = windowLeft(row, nowMs);
+  if (time >= 0) parts.push(`${Math.round(time * 100)}% of window remaining`);
+  const reset = resetText(row, nowMs, locale);
+  if (reset) parts.push(reset);
+  const verdict = paceVerdict(row);
+  if (verdict) parts.push(verdict === "lasts" ? "Lasts until reset"
+    : verdict === "runs dry" ? "Projected to run out before reset" : "Little reserve before reset");
+  return parts.join(", ");
+}
+
+export function paceMarkerColor(row, entry, style, theme, nowMs) {
+  if (style === "bar") return sidebarRingColor(entry, row, theme);
+  if (style === "provider") return providerColor(entry?.provider);
+  if (style === "theme" || style === "gaps") return theme.ink;
+  return percentColor(windowLeft(row, nowMs) * 100, theme);
+}
+
+/** Split an arc at the time marker so the marker stays clear of the fill. */
+export function ringArcs(value, timeLeft, halfGap = 12) {
+  const end = ringSweep(value);
+  if (end <= 0) return [];
+  if (!Number.isFinite(timeLeft) || timeLeft < 0 || timeLeft > 1) return [{start: 0, sweep: end}];
+  const marker = timeLeft * 360;
+  const cuts = [-360, 0, 360].map(offset => [marker + offset - halfGap, marker + offset + halfGap]);
+  const arcs = [];
+  let cursor = 0;
+  for (const [left, right] of cuts) {
+    if (right <= 0 || left >= end) continue;
+    if (left > cursor) arcs.push({start: cursor, sweep: left - cursor});
+    cursor = Math.max(cursor, right);
+  }
+  if (cursor < end) arcs.push({start: cursor, sweep: end - cursor});
+  return arcs;
 }
 
 /** "resets in 3h 10m", or "resets Nov 27" for windows longer than a day. */
@@ -626,13 +668,44 @@ export function ringSweep(value) {
 
 /** Last 30 local days as bar heights 0..1 (1 = the busiest day). */
 export function historyBars(entry) {
-  const days = listOf(entry ? entry.dailyUsage : null);
+  const days = historyPoints(entry);
   if (days.length === 0) {
     return [];
   }
-  const values = days.map((day) => Math.max(0, Number(day && day.costUSD) || 0));
+  const metric = days.some(day => Number(day?.costUSD) > 0) ? "costUSD" : "totalTokens";
+  const values = days.map(day => {
+    const number = Number(day?.[metric]);
+    return Number.isFinite(number) ? Math.max(0, number) : 0;
+  });
   const peak = values.reduce((best, value) => Math.max(best, value), 0);
   return values.map((value) => (peak > 0 ? value / peak : 0));
+}
+
+export function historyPoints(entry) {
+  return listOf(entry?.dailyUsage).filter(day => day && typeof day === "object");
+}
+
+/** Plain text works in both a tooltip and a screen reader. */
+export function historyTooltip(point) {
+  if (!point) return "";
+  const lines = [String(point.dayKey || "Day")];
+  const amounts = item => {
+    const parts = [];
+    if (typeof item.costUSD === "number" && Number.isFinite(item.costUSD) && item.costUSD > 0)
+      parts.push(money(item.costUSD));
+    if (typeof item.totalTokens === "number" && Number.isFinite(item.totalTokens) && item.totalTokens > 0)
+      parts.push(`${compactNumber(item.totalTokens)} tokens`);
+    return parts.join(" · ");
+  };
+  lines.push(amounts(point) || "No usage");
+  for (const model of listOf(point.models).filter(Boolean))
+    lines.push([String(model.name || model.modelName || "Model"), amounts(model)].filter(Boolean).join(": "));
+  for (const reset of listOf(point.limitResets).filter(Boolean)) {
+    const left = typeof reset.percentLeft === "number" && Number.isFinite(reset.percentLeft)
+      ? `${Math.round(reset.percentLeft)}% unused` : "Unused limit reset";
+    lines.push([String(reset.title || "Limit"), left, reset.resetsAt || ""].filter(Boolean).join(" · "));
+  }
+  return lines.join("\n");
 }
 
 export function money(value) {

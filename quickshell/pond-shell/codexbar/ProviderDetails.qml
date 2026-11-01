@@ -11,14 +11,24 @@ Column {
   property bool headingVisible: true
   readonly property var usageRows: Model.rowsOf(entry)
   readonly property var spend: Model.spendOf(entry)
-  readonly property var history: Model.historyBars(entry)
+  readonly property var history: Model.historyPoints(entry)
   readonly property var resets: Model.resetCreditsOf(entry)
   readonly property var credits: Model.creditsOf(entry)
   readonly property string status: Model.stateText(entry)
   readonly property bool failed: Model.isErrorOnly(entry)
-  readonly property string note: entry?.usageUnavailable ? "Usage limits are unavailable. Spend is local."
-      : entry?.stale ? "Showing the last reading. CodexBar will retry."
-      : spend?.provenance === "listPriceEstimate" ? "Spend is a list-price estimate, not a bill." : ""
+  readonly property string note: [
+    entry?.usageUnavailable ? "Usage limits are unavailable. Spend is local." : "",
+    entry?.stale ? "Showing the last reading. CodexBar will retry." : "",
+    spend?.provenance === "listPriceEstimate" ? "Spend is a list-price estimate, not a bill." : "",
+    entry?.tokenUsage?.historyCoverageIsEstablished === false
+      ? "Local history scan is incomplete. Totals may be missing usage. Refresh to continue scanning." : ""
+  ].filter(Boolean).join("\n")
+  readonly property string resetExpiry: {
+    const value = resets?.nextExpiresAt;
+    const date = value ? new Date(value) : null;
+    return date && Number.isFinite(date.getTime())
+      ? Qt.formatDateTime(date, Qt.DefaultLocaleLongDate) : "";
+  }
   spacing: 16
 
   Column {
@@ -39,7 +49,7 @@ Column {
     }
     Text {
       width: root.width
-      text: [root.entry?.plan, root.entry?.account].filter(Boolean).join(" · ")
+      text: [root.entry?.plan, root.entry?.account, root.entry?.organization].filter(Boolean).join(" · ")
       visible: text !== ""
       textFormat: Text.PlainText
       color: "white"; opacity: 0.5
@@ -48,7 +58,7 @@ Column {
     }
     Text {
       width: root.width
-      text: root.status + (root.entry?.source ? (root.status ? " · " : "") + root.entry.source : "")
+      text: [root.status, root.entry?.source, root.entry?.version].filter(Boolean).join(" · ")
       visible: text !== ""
       textFormat: Text.PlainText
       color: root.failed ? "#FA9CA7" : "white"; opacity: 0.65
@@ -59,7 +69,7 @@ Column {
   Text {
     objectName: "providerError"
     width: root.width
-    visible: root.failed
+    visible: !!root.entry?.error || !!root.entry?.lastAttemptError
     text: root.entry ? Model.errorText(root.entry, 400) : ""
     textFormat: Text.PlainText
     color: "#FA9CA7"; wrapMode: Text.Wrap
@@ -92,9 +102,11 @@ Column {
   }
 
   Text {
+    objectName: "resetCredits"
     width: root.width
     visible: !!root.resets
-    text: root.resets ? root.resets.availableCount + " limit resets available" : ""
+    text: root.resets ? root.resets.availableCount + " limit resets available"
+        + (root.resetExpiry ? "\nNext expiry: " + root.resetExpiry : "") : ""
     color: "white"; opacity: 0.7
     font.family: Shell.Theme.fontFamily; font.pixelSize: 12
     wrapMode: Text.Wrap
@@ -148,28 +160,13 @@ Column {
     }
   }
 
-  Column {
+  HistoryChart {
     objectName: "historySection"
     width: root.width
-    spacing: 8
     visible: root.history.length > 0 && root.pageState.settings?.history !== false
-    Text { text: "Daily spend"; color: "white"; opacity: 0.5; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
-    Item {
-      width: root.width; height: 38
-      Repeater {
-        model: root.history
-        delegate: Rectangle {
-          required property real modelData
-          required property int index
-          x: index * root.width / root.history.length
-          y: 38 - height
-          width: Math.max(1, root.width / root.history.length - 2)
-          height: Math.max(2, 38 * modelData)
-          radius: 2
-          color: modelData > 0 ? Shell.PanelStyle.accent : Shell.PanelStyle.pressed
-        }
-      }
-    }
+    points: root.history
+    bars: Model.historyBars(root.entry)
+    interactive: root.interactive
   }
 
   Text {
@@ -180,6 +177,36 @@ Column {
     wrapMode: Text.Wrap
     color: "white"; opacity: 0.55
     font.family: Shell.Theme.fontFamily; font.pixelSize: 11
+  }
+
+  Text {
+    objectName: "providerStatus"
+    width: root.width
+    visible: text !== ""
+    text: root.entry?.status?.description || ({none: "Operational", minor: "Partial outage",
+      major: "Major outage", critical: "Critical issue", maintenance: "Maintenance"})[root.entry?.status?.indicator] || ""
+    textFormat: Text.PlainText
+    wrapMode: Text.Wrap
+    color: "white"; opacity: 0.65
+    font.family: Shell.Theme.fontFamily; font.pixelSize: 11
+  }
+
+  ActionButton {
+    visible: !!root.entry?.status?.url
+    width: root.width
+    text: "Open provider status"
+    interactive: root.interactive
+    onClicked: root.pageState.openSite(root.entry.status.url)
+  }
+
+  Text {
+    width: root.width
+    readonly property date updated: new Date(root.entry?.updatedAt || "")
+    visible: Number.isFinite(updated.getTime())
+    text: visible ? "Updated " + Qt.formatDateTime(updated, Qt.DefaultLocaleShortDate) : ""
+    color: "white"; opacity: 0.45
+    font.family: Shell.Theme.fontFamily; font.pixelSize: 10
+    wrapMode: Text.Wrap
   }
 
   ActionButton {

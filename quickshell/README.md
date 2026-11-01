@@ -57,12 +57,25 @@ updates are opt-in. The bundled Linux helper handles native provider access
 and local cost scans; it does not replace the upstream CLI.
 
 The sidebar shows provider logos, remaining usage rings and window labels.
+Each usage ring has a tick for the time remaining in that window. Both use
+the same clockwise scale. An arc that extends past the tick has reserve.
+Hover or focus a provider to read the percentages, reset time and pace report.
+Credits and reset counts have no time tick.
 The drawer has provider tabs, full usage bars, spend and history. Its settings
 button opens these pages:
 
-- General has the CLI path, refresh interval, timeout, spend, credits and email masking.
+- General has the CLI path, refresh interval, timeout, spend, credits and email masking. It also controls provider status requests, shared usage fetches, the cost refresh interval, retry attempts, failure cooldown and cost scan timeout.
 - Providers has add, enable, disable, remove and reorder controls. Select a row to set the source and account, detect accounts or enter a masked API key. Antigravity has browser sign-in controls. Devin has an organization field. Bedrock uses existing AWS credentials.
-- Appearance sets sidebar rows, rings per provider, the initial layout and the history chart.
+- Appearance sets sidebar rows, rings per provider, the initial layout and the history chart. Circular pace markers can use time, usage, provider or theme colors. They can also show a gap alone or be hidden.
+
+Provider details show status descriptions and links, reset-credit expiry,
+partial refresh errors and incomplete-history notes. The daily chart uses
+spend when available, or tokens for a token-only series. Hover, click or focus
+a day to read its models and unused limit resets. Arrow keys move between
+days. Home and End select the first and last day.
+
+Cross-device sync setup, multi-provider selection in the drawer and KDE tray
+layout controls are not yet ported. Pond keeps its sidebar and page controls.
 
 Apply saves and refreshes. Cancel keeps the current values. Settings live in
 `$XDG_CONFIG_HOME/codexbar-plasmoid/config.json`, or

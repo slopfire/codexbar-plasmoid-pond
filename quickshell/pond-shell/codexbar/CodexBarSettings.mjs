@@ -467,11 +467,19 @@ export function sources(provider) {
 }
 export function validate(patch) {
   if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new Error("Invalid settings");
-  for (const [key, min, max] of [["refreshIntervalSeconds",60,3600],["timeoutSeconds",5,120],
+  for (const [key, min, max] of [["refreshIntervalSeconds",60,86400],["timeoutSeconds",5,300],
+    ["costRefreshIntervalSeconds",300,604800],["providerRetryAttempts",1,4],
+    ["failureCooldownSeconds",30,3600],["costScanTimeoutSeconds",60,1800],
     ["cardBars",1,6],["expandedRows",0,8]]) {
     if (patch[key] !== undefined && (!Number.isInteger(patch[key]) || patch[key] < min || patch[key] > max))
       throw new Error("Check the value for " + key);
   }
+  for (const key of ["includeStatus", "shareProviderFetches"]) {
+    if (patch[key] !== undefined && typeof patch[key] !== "boolean")
+      throw new Error("Check the value for " + key);
+  }
+  if (patch.paceIndicatorStyle !== undefined && !["position", "bar", "provider", "theme", "gaps", "off"].includes(patch.paceIndicatorStyle))
+    throw new Error("Choose a pace indicator style");
   if (patch.providerConfigs !== undefined) {
     if (!Array.isArray(patch.providerConfigs)) throw new Error("Invalid provider list");
     for (const row of patch.providerConfigs) {

@@ -54,11 +54,17 @@ Item {
   readonly property var cliPath: String(settings.cliPath || "")
   readonly property bool autoUpdate: settings.autoUpdateCli === true
   readonly property string provider: String(settings.provider || "all")
-  readonly property int refreshSeconds: Math.max(60, Number(settings.refreshIntervalSeconds) || 150)
+  readonly property int refreshSeconds: Math.max(60, Math.min(86400, Number(settings.refreshIntervalSeconds) || 150))
   readonly property bool includeCost: settings.cost !== false
+  readonly property bool includeStatus: settings.includeStatus !== false
+  readonly property bool shareProviderFetches: settings.shareProviderFetches !== false
+  readonly property int costRefreshIntervalSeconds: Math.max(300, Math.min(604800, Number(settings.costRefreshIntervalSeconds) || 3600))
+  readonly property int providerRetryAttempts: Math.max(1, Math.min(4, Number(settings.providerRetryAttempts) || 2))
+  readonly property int failureCooldownSeconds: Math.max(30, Math.min(3600, Number(settings.failureCooldownSeconds) || 180))
+  readonly property int costScanTimeoutSeconds: Math.max(60, Math.min(1800, Number(settings.costScanTimeoutSeconds) || 300))
   readonly property bool includeCredits: settings.credits !== false
   readonly property bool anonymizeEmail: settings.anonymizeEmail !== false
-  readonly property int timeoutSeconds: Math.max(5, Math.min(120, Number(settings.timeoutSeconds) || 60))
+  readonly property int timeoutSeconds: Math.max(5, Math.min(300, Number(settings.timeoutSeconds) || 60))
   // Maximum rings per provider. The card also limits them to its width.
   readonly property int cardBars: Math.max(1, Math.min(6, Number(settings.cardBars) || 2))
   // Provider rows in the card. An explicit 0 shows all providers.
@@ -101,6 +107,7 @@ Item {
       force: force === true,
       cost: includeCost,
       credits: includeCredits,
+      status: includeStatus,
       anonymize: anonymizeEmail,
       autoUpdate,
       provider: "all",
@@ -115,10 +122,14 @@ Item {
       "--timeout", String(root.timeoutSeconds),
       "--cost", options.cost ? "true" : "false",
       "--credits", options.credits ? "true" : "false",
+      "--status", options.status ? "true" : "false",
       "--anonymize-emails", options.anonymize ? "true" : "false",
       "--auto-update", options.autoUpdate ? "true" : "false",
-      "--cache-seconds", String(root.refreshSeconds),
-      "--cost-cache-seconds", "3600",
+      "--cache-seconds", String(root.shareProviderFetches ? root.refreshSeconds : 0),
+      "--cost-cache-seconds", String(root.costRefreshIntervalSeconds),
+      "--retry-attempts", String(root.providerRetryAttempts),
+      "--cooldown-cap-seconds", String(root.failureCooldownSeconds),
+      "--cost-timeout", String(root.costScanTimeoutSeconds),
       "--force", options.force ? "true" : "false",
     ];
     if (root.resolvedCliPath !== "") {
@@ -432,6 +443,7 @@ Item {
     accountRequest = Object.assign({}, config, {enabled: true, allAccounts: true, account: "", accountIndex: 0, includeCost: false});
     const options = root.options(false);
     options.providers = [accountRequest];
+    options.status = false;
     const args = command(options);
     args.push("--cost", "false", "--auto-update", "false", "--anonymize-emails", "false");
     accountProcess.command = args;

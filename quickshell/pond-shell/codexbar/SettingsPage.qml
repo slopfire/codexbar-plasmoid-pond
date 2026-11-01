@@ -78,7 +78,9 @@ Item {
     validationError = "";
     const update = {};
     for (const key of ["provider", "providerConfigs", "cliPath", "refreshIntervalSeconds", "timeoutSeconds",
-      "autoUpdateCli", "cost", "credits", "anonymizeEmail", "cardBars", "expandedRows", "expanded", "history"])
+      "autoUpdateCli", "cost", "credits", "anonymizeEmail", "cardBars", "expandedRows", "expanded", "history", "includeStatus",
+      "costRefreshIntervalSeconds", "shareProviderFetches", "providerRetryAttempts", "failureCooldownSeconds",
+      "costScanTimeoutSeconds", "paceIndicatorStyle"])
       if (draft[key] !== undefined) update[key] = draft[key];
     try { Settings.validate(update); }
     catch (error) { validationError = error.message; return; }
@@ -157,8 +159,14 @@ Item {
           onTextChanged: root.patch("cliPath", text)
           Accessible.name: "CodexBar CLI path"
         }
-        SettingNumber { width: parent.width; text: "Refresh interval, seconds"; minimum: 60; maximum: 3600; step: 30; value: root.draft.refreshIntervalSeconds || 150; onChanged: value => root.patch("refreshIntervalSeconds", value) }
-        SettingNumber { width: parent.width; text: "CLI timeout, seconds"; minimum: 5; maximum: 120; step: 5; value: root.draft.timeoutSeconds || 60; onChanged: value => root.patch("timeoutSeconds", value) }
+        SettingNumber { width: parent.width; text: "Refresh interval, seconds"; minimum: 60; maximum: 86400; step: 30; value: root.draft.refreshIntervalSeconds || 150; onChanged: value => root.patch("refreshIntervalSeconds", value) }
+        SettingNumber { width: parent.width; text: "CLI timeout, seconds"; minimum: 5; maximum: 300; step: 5; value: root.draft.timeoutSeconds || 60; onChanged: value => root.patch("timeoutSeconds", value) }
+        SettingToggle { width: parent.width; text: "Fetch provider status"; checked: root.draft.includeStatus !== false; onToggled: value => root.patch("includeStatus", value) }
+        SettingToggle { width: parent.width; text: "Share matching usage fetches"; checked: root.draft.shareProviderFetches !== false; onToggled: value => root.patch("shareProviderFetches", value) }
+        SettingNumber { width: parent.width; text: "Cost refresh, seconds"; minimum: 300; maximum: 604800; step: 300; value: root.draft.costRefreshIntervalSeconds || 3600; onChanged: value => root.patch("costRefreshIntervalSeconds", value) }
+        SettingNumber { width: parent.width; text: "Provider attempts"; minimum: 1; maximum: 4; value: root.draft.providerRetryAttempts || 2; onChanged: value => root.patch("providerRetryAttempts", value) }
+        SettingNumber { width: parent.width; text: "Failure cooldown, seconds"; minimum: 30; maximum: 3600; step: 30; value: root.draft.failureCooldownSeconds || 180; onChanged: value => root.patch("failureCooldownSeconds", value) }
+        SettingNumber { width: parent.width; text: "Cost scan timeout, seconds"; minimum: 60; maximum: 1800; step: 60; value: root.draft.costScanTimeoutSeconds || 300; onChanged: value => root.patch("costScanTimeoutSeconds", value) }
         SettingToggle { width: parent.width; text: "Show spend history"; checked: root.draft.cost !== false; onToggled: value => root.patch("cost", value) }
         SettingToggle { width: parent.width; text: "Show credits"; checked: root.draft.credits !== false; onToggled: value => root.patch("credits", value) }
         SettingToggle { width: parent.width; text: "Mask account email"; checked: root.draft.anonymizeEmail !== false; onToggled: value => root.patch("anonymizeEmail", value) }
@@ -172,6 +180,17 @@ Item {
         SettingNumber { width: parent.width; text: "Rings per provider"; minimum: 1; maximum: 6; value: root.draft.cardBars || 2; onChanged: value => root.patch("cardBars", value) }
         SettingToggle { width: parent.width; text: "Start with provider rows"; checked: root.draft.expanded !== false; onToggled: value => root.patch("expanded", value) }
         SettingToggle { width: parent.width; text: "Show daily spend chart"; checked: root.draft.history !== false; onToggled: value => root.patch("history", value) }
+        Text { text: "Circular pace marker"; color: "white"; opacity: 0.6; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+        SettingChoice {
+          width: parent.width
+          value: root.draft.paceIndicatorStyle || "position"
+          options: [{value: "position", label: "Time remaining color"}, {value: "bar", label: "Usage color"},
+            {value: "provider", label: "Provider color"}, {value: "theme", label: "Theme text color"},
+            {value: "gaps", label: "Gap only"}, {value: "off", label: "Hidden"}]
+          Accessible.name: "Pace marker style"
+          onPicked: value => root.patch("paceIndicatorStyle", value)
+        }
+        Text { width: parent.width; text: "The arc shows budget left. The tick shows time left. An arc past the tick has reserve."; color: "white"; opacity: 0.5; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
         Text { width: parent.width; text: "Colors and fonts follow the Pond theme."; color: "white"; opacity: 0.5; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
       }
       Column {

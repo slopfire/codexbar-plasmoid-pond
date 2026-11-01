@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls as Controls
 import "CodexBarModel.mjs" as Model
 import ".." as Shell
 
@@ -37,7 +38,14 @@ Item {
       height: root.rowHeight
       activeFocusOnTab: true
       Accessible.role: Accessible.Button
-      Accessible.name: Model.accessibleLabel({ entry: entry, rings: gauges })
+      Accessible.name: Model.accessibleLabel({ entry: entry, rings: gauges }, root.state.nowMs)
+      Controls.ToolTip {
+        id: rowTip
+        visible: pointer.hovered || line.activeFocus
+        delay: 500
+        text: line.Accessible.name
+        contentItem: Text { text: rowTip.text; font: rowTip.font; color: rowTip.palette.toolTipText; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+      }
       Accessible.onPressAction: root.rowClicked(line.entry)
       Keys.onReturnPressed: root.rowClicked(line.entry)
       Keys.onSpacePressed: root.rowClicked(line.entry)
@@ -104,7 +112,9 @@ Item {
               value: gauge.modelData.value
               color: Model.sidebarRingColor(line.entry, gauge.modelData.row, root.theme)
               trackColor: root.theme.track
-              // Window duration is below the ring. The drawer has reset timing.
+              timeLeft: Model.windowLeft(gauge.modelData.row, root.state.nowMs)
+              markerStyle: root.state.settings?.paceIndicatorStyle || "position"
+              tickColor: Model.paceMarkerColor(gauge.modelData.row, line.entry, markerStyle, root.theme, root.state.nowMs)
               Text {
                 anchors.centerIn: parent
                 text: gauge.modelData.kind === "window"

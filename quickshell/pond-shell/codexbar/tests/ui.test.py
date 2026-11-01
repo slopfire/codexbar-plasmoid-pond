@@ -46,6 +46,15 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
       }
       walk(drawer);
     }
+    function nextHistoryDay() { input.keyClick(Qt.Key_Right); }
+    function applySettings() {
+      function walk(node) {
+        if (node.objectName === "applySettings") { input.mouseClick(node, 20, 16); return true; }
+        for (const child of node.children || []) if (walk(child)) return true;
+        return false;
+      }
+      walk(drawer);
+    }
     function focusRow() {''')
     config = base / "shell.qml"
     config.write_text(template)
@@ -84,6 +93,14 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
             assert spend["y"] >= bars["y"] + bars["height"] + 10, report
         try:
             wait_for(lambda report: len(report["tree"]) > 0)
+            report = wait_for(lambda report: any(item.get("ring") and item["marker"] for item in report["tree"]))
+            rings = [item for item in report["tree"] if item.get("ring") and item["visible"]]
+            assert len(rings) == 6 and all(item["marker"] and 0 <= item["timeLeft"] <= 1 for item in rings), rings
+            call("markerStyle", "off")
+            report = wait_for(lambda report: all(not item["marker"] for item in report["tree"] if item.get("ring")))
+            call("markerStyle", "gaps")
+            wait_for(lambda report: all(item["style"] == "gaps" for item in report["tree"] if item.get("ring")))
+            call("markerStyle", "position")
             call("hoverRow")
             for _ in range(5):
                 report = wait_for(lambda report: True)
@@ -92,23 +109,55 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
                 if row["alpha"] > 0:
                     assert row["background"].endswith("ffffff"), row
                 time.sleep(0.04)
-            print("ok - pointer hover stays translucent throughout the color animation")
+            print("ok - pointer hover stays translucent and circular pace styles update")
+            call("collapse", 1)
+            report = wait_for(lambda report: any(item.get("ring") and item["visible"] and item["size"] == 28 for item in report["tree"]))
+            assert all(item["marker"] for item in report["tree"] if item.get("ring") and item["visible"]), report
+            call("collapse", 0)
+            print("ok - pace markers remain present in the collapsed rail")
             call("list")
             report = wait_for(lambda report: report["page"] == "drawer" and not report["transitioning"])
             check_sections(report)
             print("ok - dashboard reset captions and spend sections do not overlap")
+            assert any(item.get("section") == "providerStatus" and item["text"] == "Demo partial outage" for item in report["pages"]), report
+            assert any(item.get("section") == "resetCredits" and "Next expiry" in item["text"] for item in report["pages"]), report
+            call("historyDay", 20)
+            report = wait_for(lambda report: any(item.get("dayDetails") and "40% unused" in item["text"] for item in report["pages"]))
+            assert any("demo-model" in item.get("text", "") for item in report["pages"] if item.get("dayDetails")), report
+            call("nextHistoryDay")
+            wait_for(lambda report: any(item.get("dayDetails") and item["text"].startswith("2026-10-22") for item in report["pages"]))
+            call("historyVisible", "false")
+            wait_for(lambda report: all(not item["visible"] for item in report["pages"] if item.get("section") == "historySection"))
+            call("historyVisible", "true")
+            print("ok - status, reset expiry and daily model/reset details render")
             call("clickRow")
             report = wait_for(lambda report: report["page"] == "provider" and not report["transitioning"])
             check_sections(report)
             print("ok - pointer click opens a provider page with non-overlapping sections")
             call("list")
             wait_for(lambda report: report["page"] == "drawer" and not report["transitioning"])
+            call("richError")
+            report = wait_for(lambda report: any(item.get("section") == "providerError" and item["visible"] for item in report["pages"]))
+            assert any(item.get("section") == "providerNote" and "incomplete" in item["text"] and "list-price" in item["text"] for item in report["pages"]), report
+            print("ok - partial errors retain usage, incomplete history and estimate notes")
             call("clickSettings")
             wait_for(lambda report: report["page"] == "settings" and not report["transitioning"])
             print("ok - the dashboard settings button opens the settings page")
             call("editProvider", 2)
             report = wait_for(lambda report: any(item.get("keyField") and item["masked"] for item in report["pages"]))
             print("ok - API provider setup has a masked credential field")
+            call("settingsTab", 0)
+            call("configureFetch")
+            call("applySettings")
+            report = wait_for(lambda report: report["page"] == "drawer" and not report["transitioning"])
+            expected = {"includeStatus": False, "shareProviderFetches": False, "costRefreshIntervalSeconds": 7200,
+                        "providerRetryAttempts": 3, "failureCooldownSeconds": 300, "costScanTimeoutSeconds": 600,
+                        "paceIndicatorStyle": "theme"}
+            assert all(report["settings"].get(key) == value for key, value in expected.items()), report
+            call("error")
+            report = wait_for(lambda report: any(item.get("ring") and item["value"] == 100 and item["timeLeft"] == -1 for item in report["tree"]))
+            assert all(not item["marker"] for item in report["tree"] if item.get("ring") and item["timeLeft"] == -1), report
+            print("ok - settings Apply retains fetch controls and credit rings have no pace marker")
             errors = [line for line in log_path.read_text().splitlines()
                       if any(token in line for token in ("ERROR", "ReferenceError", "TypeError", "Binding loop"))]
             assert not errors, errors

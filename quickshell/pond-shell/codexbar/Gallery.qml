@@ -47,6 +47,7 @@ Item {
         compact: root.compact
         theme: root.theme
         nowMs: root.state.nowMs
+        markerStyle: root.state.settings?.paceIndicatorStyle || "position"
         onClicked: root.tileClicked(root.tiles[cell.index].entry)
       }
       FocusScope {

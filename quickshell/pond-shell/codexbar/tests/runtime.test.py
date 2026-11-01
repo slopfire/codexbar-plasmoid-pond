@@ -50,6 +50,16 @@ ShellRoot {
         if (child.interval === 500) child.interval = (usage.timeoutSeconds + 90) * 1000;
       usage.refreshSoon(true);
     }
+    function configuredArgs(): string {
+      const previous = usage.settings;
+      usage.settings = Object.assign({}, previous, {includeStatus: false, shareProviderFetches: false,
+        refreshIntervalSeconds: 86400, timeoutSeconds: 300, costRefreshIntervalSeconds: 604800,
+        providerRetryAttempts: 4, failureCooldownSeconds: 3600, costScanTimeoutSeconds: 1800});
+      const args = usage.command(usage.options(false));
+      usage.settings = previous;
+      return JSON.stringify(args);
+    }
+    function discover() { usage.discoverAccounts({provider: "codex", source: "cli"}); }
     function save() { usage.saveSettings({credits: false}, usage.settings); }
     function staleSave() { usage.saveSettings({credits: true}, {}); }
     function timeout() {
@@ -96,7 +106,16 @@ ShellRoot {
         ipc("refresh")
         state = wait_for(lambda s: s["loaded"] and not s["running"])
         assert state["entries"][0]["rows"][0]["percentLeft"] == 74, state
-        print("ok - helper output updates usage")
+        args = json.loads((base / "calls.jsonl").read_text().splitlines()[0])
+        for flag, value in {"--status": "true", "--cache-seconds": "150", "--cost-cache-seconds": "3600",
+                            "--retry-attempts": "2", "--cooldown-cap-seconds": "180", "--cost-timeout": "300"}.items():
+            assert args[args.index(flag) + 1] == value, args
+        args = json.loads(ipc("configuredArgs"))
+        for flag, value in {"--status": "false", "--cache-seconds": "0", "--cost-cache-seconds": "604800",
+                            "--timeout": "300", "--retry-attempts": "4", "--cooldown-cap-seconds": "3600",
+                            "--cost-timeout": "1800"}.items():
+            assert args[args.index(flag) + 1] == value, args
+        print("ok - helper output updates usage and fetch controls reach helper arguments")
         control(fail=True)
         ipc("refresh")
         state = wait_for(lambda s: s["failed"] and not s["running"])
@@ -122,6 +141,14 @@ ShellRoot {
         state = wait_for(lambda s: not s["failed"] and not s["running"])
         assert state["entries"][0]["rows"][0]["percentLeft"] == 82, state
         print("ok - refresh recovers after timeout")
+        before = len((base / "calls.jsonl").read_text().splitlines())
+        ipc("discover")
+        deadline = time.monotonic() + 3
+        while len((base / "calls.jsonl").read_text().splitlines()) == before and time.monotonic() < deadline:
+            time.sleep(0.04)
+        args = json.loads((base / "calls.jsonl").read_text().splitlines()[-1])
+        assert args[args.index("--status") + 1] == "false", args
+        print("ok - account discovery disables status requests")
         proc.terminate()
         proc.wait(timeout=3)
         env["TEST_DEMAND"] = "1"

@@ -187,4 +187,73 @@ test("QML sequences retain usage windows and history", () => {
   assert.deepEqual(Model.historyBars(item), [0.5, 1]);
 });
 
+
+
+test("time markers reject invalid clocks and resets outside the window", () => {
+  const row = {resetsAt: new Date(now + 60 * 60000).toISOString(), windowMinutes: 60};
+  assert.equal(Model.windowLeft(row, now), 1);
+  assert.equal(Model.windowLeft(row, now - 1), -1);
+  assert.equal(Model.windowLeft(row, now + 60 * 60000), 0);
+  assert.equal(Model.windowLeft(row, now + 90 * 60000), 0);
+  assert.equal(Model.windowLeft(row, NaN), -1);
+  for (const windowMinutes of [0, -1, Infinity, NaN])
+    assert.equal(Model.windowLeft({...row, windowMinutes}, now), -1);
+  assert.equal(Model.windowLeft({...row, resetsAt: "invalid"}, now), -1);
+});
+
+test("empty pace is unknown and a young window has no forecast", () => {
+  for (const pace of [{}, {willLastToReset: null, deltaPercent: null}, null])
+    assert.equal(Model.paceVerdict({percentLeft: 70, pace}), "");
+  assert.equal(Model.paceVerdict({pace: {willLastToReset: false, expectedUsedPercent: 9}}), "");
+  assert.equal(Model.paceVerdict({pace: {willLastToReset: true, deltaPercent: null}}), "lasts");
+});
+
+test("pace text compares remaining budget with remaining time", () => {
+  const row = {title: "Session", percentLeft: 70, windowMinutes: 60,
+    resetsAt: new Date(now + 30 * 60000).toISOString(),
+    pace: {expectedUsedPercent: 50, deltaPercent: -20, willLastToReset: true}};
+  const label = Model.accessibleLabel({entry: entry({rows: [row]}), rings: Model.sidebarRings(entry({rows: [row]}), 2)}, now);
+  assert.match(label, /70% remaining, 50% of window remaining/);
+  assert.match(label, /Lasts until reset/);
+  assert.doesNotMatch(Model.windowDescription({percentLeft: 50}, now), /window remaining|Lasts/);
+});
+
+test("ring arcs leave a gap at the time marker, including across the seam", () => {
+  assert.deepEqual(Model.ringArcs(0, 0.5), []);
+  assert.deepEqual(Model.ringArcs(50, -1), [{start: 0, sweep: 179.95}]);
+  assert.deepEqual(Model.ringArcs(100, 0), Model.ringArcs(100, 1));
+  for (const value of [0, 10, 50, 100]) for (const time of [0, 0.02, 0.5, 0.98, 1]) {
+    const arcs = Model.ringArcs(value, time);
+    assert.ok(arcs.length <= 2);
+    for (const arc of arcs) {
+      assert.ok(arc.start >= 0 && arc.sweep > 0 && arc.start + arc.sweep <= Model.ringSweep(value));
+      for (const offset of [-360, 0, 360]) {
+        const marker = time * 360 + offset;
+        assert.ok(arc.start + arc.sweep <= marker - 12 || arc.start >= marker + 12);
+      }
+    }
+  }
+});
+
+test("history uses one unit for the series and preserves detailed points", () => {
+  const days = [{dayKey: "2026-11-01", totalTokens: 200}, {dayKey: "2026-11-02", totalTokens: 100}];
+  assert.deepEqual(Model.historyBars(entry({dailyUsage: days})), [1, 0.5]);
+  assert.deepEqual(Model.historyPoints(entry({dailyUsage: days})), days);
+  assert.deepEqual(Model.historyBars(entry({dailyUsage: [{costUSD: 2, totalTokens: 1}, {costUSD: 0, totalTokens: 500}]})), [1, 0]);
+  assert.deepEqual(Model.historyBars(entry({dailyUsage: [{costUSD: Infinity, totalTokens: 0}, null]})), [0]);
+  assert.match(Model.historyTooltip({...days[0], costUSD: 1.5,
+    models: [{name: "demo", totalTokens: 100}], limitResets: [{title: "Session", percentLeft: 25}]}),
+    /2026-11-01\n\$1.50 · 200 tokens\ndemo: 100 tokens\nSession · 25% unused/);
+  assert.equal(Model.historyTooltip(null), "");
+});
+
+test("zero reset credits remain visible without a full availability ring", () => {
+  const item = entry({limitResetCredits: {availableCount: 0}, error: {message: "partial failure"}});
+  assert.equal(Model.resetCreditsOf(item).availableCount, 0);
+  assert.equal(Model.isErrorOnly(item), false);
+  assert.equal(Model.headline(item).text, "0 resets");
+  assert.equal(Model.rings(item, 1)[0].value, 0);
+  assert.equal(Model.resetCreditsOf(entry({limitResetCredits: {availableCount: null}})), null);
+});
+
 console.log(`\n${passed} tests passed`);

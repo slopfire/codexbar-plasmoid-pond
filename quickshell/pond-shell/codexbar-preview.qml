@@ -21,9 +21,12 @@ ShellRoot {
       if ("interactive" in node && "pageState" in node && !node.interactive) return;
       if ("gauges" in node) out.push({gauges: node.gauges, provider: node.entry.provider,
         background: String(node.children[0].color), alpha: node.children[0].color.a});
+      if ("hasMarker" in node) out.push({ring: true, value: node.value, timeLeft: node.timeLeft,
+        marker: node.hasMarker, style: node.markerStyle, visible: node.visible, size: node.size});
+      if (node.objectName === "historyDayDetails") out.push({dayDetails: true, text: node.text, visible: node.visible});
       if (node.objectName === "providerKey") out.push({keyField: true, masked: node.password && !node.revealed});
-      if (node.objectName === "usageWindows" || node.objectName === "usageWindow" || node.objectName === "spendSection" || node.objectName === "providerNote")
-        out.push({section: node.objectName, x: node.x, y: node.y, height: node.height, visible: node.visible});
+      if (node.objectName === "usageWindows" || node.objectName === "usageWindow" || node.objectName === "spendSection" || node.objectName === "providerNote" || node.objectName === "historySection" || node.objectName === "providerStatus" || node.objectName === "providerError" || node.objectName === "resetCredits")
+        out.push({section: node.objectName, x: node.x, y: node.y, height: node.height, visible: node.visible, text: node.text || ""});
       if ("columns" in node) out.push({columns: node.columns, width: node.width, bars: node.bars});
       for (const child of node.children || []) walk(child);
     }
@@ -32,7 +35,12 @@ ShellRoot {
   }
   property var reference: [Object.assign(provider("codex", 99, 74), {
     tokenUsage: {sessionCostUSD: 1.79, last30DaysCostUSD: 54, sessionTokens: 120000, last30DaysTokens: 2800000, provenance: "listPriceEstimate"},
-    dailyUsage: Array.from({length: 30}, (_, i) => ({costUSD: i > 20 ? (i % 5) + 1 : 0}))
+    dailyUsage: Array.from({length: 30}, (_, i) => ({dayKey: "2026-10-" + String(i + 1).padStart(2, "0"),
+      costUSD: i > 20 ? (i % 5) + 1 : 0, totalTokens: (i + 1) * 1000,
+      models: [{name: "demo-model", totalTokens: (i + 1) * 1000}],
+      limitResets: i === 20 ? [{title: "Session", percentLeft: 40}] : []})),
+    status: {indicator: "minor", description: "Demo partial outage", url: "https://status.example.invalid"},
+    limitResetCredits: {availableCount: 2, nextExpiresAt: "2026-11-15T03:00:00Z"}
   }), provider("claude", 100, 9), provider("gemini", 63, 18, 1440)]
   QtObject {
     id: usage
@@ -67,7 +75,7 @@ ShellRoot {
   IpcHandler {
     target: "review"
     function report(): string {
-      return JSON.stringify({tree: inspect(card), pages: inspect(drawer), rowHeight: card.height, railHeight: rail.height, railWidth: rail.width,
+      return JSON.stringify({settings: usage.settings, tree: inspect(card), pages: inspect(drawer), rowHeight: card.height, railHeight: rail.height, railWidth: rail.width,
         page: drawer.currentPage, depth: drawer.depth, selection: drawer.currentSelection,
         transitioning: drawer.transitionRunning});
     }
@@ -83,6 +91,42 @@ ShellRoot {
     function editProvider(index: int) {
       function walk(node) {
         if ("editing" in node && "draft" in node) { node.tab = 1; node.editing = index; return true; }
+        for (const child of node.children || []) if (walk(child)) return true;
+        return false;
+      }
+      walk(drawer);
+    }
+    function markerStyle(style: string) { usage.settings = Object.assign({}, usage.settings, {paceIndicatorStyle: style}); }
+    function historyDay(index: int) {
+      function walk(node) {
+        if (node.objectName === "historySection") {
+          node.selectedIndex = index;
+          function focus(child) {
+            if ("hasReset" in child && child.index === index) { child.forceActiveFocus(); return true; }
+            for (const item of child.children || []) if (focus(item)) return true;
+            return false;
+          }
+          focus(node);
+          return true;
+        }
+        for (const child of node.children || []) if (walk(child)) return true;
+        return false;
+      }
+      walk(drawer);
+    }
+    function richError() {
+      usage.entries = [Object.assign({}, root.reference[0], {stale: true, error: {message: "Demo refresh failed"},
+        tokenUsage: Object.assign({}, root.reference[0].tokenUsage, {historyCoverageIsEstablished: false})})];
+    }
+    function historyVisible(value: bool) { usage.settings = Object.assign({}, usage.settings, {history: value}); }
+    function configureFetch() {
+      function walk(node) {
+        if ("editing" in node && "draft" in node) {
+          for (const [key, value] of Object.entries({includeStatus: false, shareProviderFetches: false,
+            costRefreshIntervalSeconds: 7200, providerRetryAttempts: 3, failureCooldownSeconds: 300,
+            costScanTimeoutSeconds: 600, paceIndicatorStyle: "theme"})) node.patch(key, value);
+          return true;
+        }
         for (const child of node.children || []) if (walk(child)) return true;
         return false;
       }
