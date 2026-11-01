@@ -66,7 +66,7 @@ button opens these pages:
 
 - General has the CLI path, refresh interval, timeout, spend, credits and email masking. It also controls provider status requests, shared usage fetches, the cost refresh interval, retry attempts, failure cooldown and cost scan timeout.
 - Providers has add, enable, disable, remove and reorder controls. Select a row to set the source and account, detect accounts or enter a masked API key. Antigravity has browser sign-in controls. Devin has an organization field. Bedrock uses existing AWS credentials.
-- Appearance sets sidebar rows, rings per provider, the initial layout and the history chart. Circular pace markers can use time, usage, provider or theme colors. They can also show a gap alone or be hidden.
+- Appearance sets sidebar rows, rings per provider, the initial layout and the history chart. Choose separate or nested rings. Nested rings put the shortest window on the outside and work in provider rows, compact tiles and the collapsed rail. Inner rings can keep the same width or become thinner. Ring size, width and gap have controls. Widths and gaps scale down when needed to fit all rings. Icons, provider names, values, window labels and ring tracks have separate visibility controls. Hover and keyboard focus retain the usage details when text is hidden. Circular pace markers can use time, usage, provider or theme colors. They can also show a gap alone or be hidden.
 
 Provider details show status descriptions and links, reset-credit expiry,
 partial refresh errors and incomplete-history notes. The daily chart uses

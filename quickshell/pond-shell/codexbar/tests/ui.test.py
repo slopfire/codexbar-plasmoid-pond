@@ -63,6 +63,11 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
       }
       walk(drawer);
     }
+    function manyWindows() {
+      usage.entries = [Object.assign({}, root.reference[0], {rows: Array.from({length: 6}, (_, i) =>
+        ({id: String(i), title: "Window " + i, percentLeft: 90 - i * 10, windowMinutes: (i + 1) * 60,
+          resetsAt: new Date(Date.now() + 1800000).toISOString()}))})];
+    }
     function focusRow() {''')
     config = base / "shell.qml"
     config.write_text(template)
@@ -142,6 +147,35 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
             assert all(item["marker"] for item in report["tree"] if item.get("ring") and item["visible"]), report
             call("collapse", 0)
             print("ok - pace markers remain present in the collapsed rail")
+            call("appearance", json.dumps({"ringLayout": "nested", "nestedRingWidth": "equal", "ringSize": 40,
+                                           "ringWidth": 3, "ringGap": 2, "showProviderIcon": False,
+                                           "showProviderName": False, "showRingTrack": False}))
+            report = wait_for(lambda report: len([item for item in report["tree"] if item.get("stack") and item["visible"]]) == 3)
+            for tree in [report["tree"], report["railTree"]]:
+                stacks = [item for item in tree if item.get("stack") and item["visible"]]
+                assert len(stacks) == 3 and all(item["count"] == 2 for item in stacks), stacks
+                assert all(item["geometry"][0]["stroke"] == item["geometry"][1]["stroke"] for item in stacks), stacks
+                assert not any(item["visible"] for item in tree if item.get("sidebarIcon")), tree
+                rings = [item for item in tree if item.get("ring") and item["visible"]]
+                assert len(rings) == 6 and all(item["extent"] == 0 and item["track"] == "#00000000" for item in rings), rings
+            call("appearance", json.dumps({"nestedRingWidth": "decreasing"}))
+            report = wait_for(lambda report: all(item["geometry"][0]["stroke"] > item["geometry"][1]["stroke"]
+                for item in report["tree"] if item.get("stack") and item["visible"]))
+            call("collapse", 1)
+            report = wait_for(lambda report: any(item.get("stack") and item["visible"] for item in report["tree"]))
+            assert sum(item.get("ring", False) and item["visible"] for item in report["tree"]) == 6, report
+            call("collapse", 0)
+            call("appearance", json.dumps({"cardBars": 6, "ringSize": 44}))
+            call("manyWindows")
+            report = wait_for(lambda report: any(item.get("stack") and item["visible"] and item["count"] == 6 for item in report["railTree"]))
+            for tree in [report["tree"], report["railTree"]]:
+                stack = next(item for item in tree if item.get("stack") and item["visible"])
+                assert stack["count"] == 6 and all(ring["size"] > 0 for ring in stack["geometry"]), stack
+            assert all(item["height"] <= item["rowHeight"] for item in report["tree"] if item.get("nestedLabels") and item["visible"]), report
+            call("appearance", json.dumps({"ringLayout": "separate", "ringSize": 28, "cardBars": 2,
+                "showProviderIcon": True, "showProviderName": True, "showRingTrack": True}))
+            call("reset")
+            print("ok - equal and decreasing nested rings fit provider rows and rails with hidden icons")
             call("list")
             report = wait_for(lambda report: report["page"] == "drawer" and not report["transitioning"])
             check_sections(report)
@@ -179,7 +213,9 @@ with tempfile.TemporaryDirectory(prefix="codexbar-ui-test-") as temporary:
             report = wait_for(lambda report: report["page"] == "drawer" and not report["transitioning"])
             expected = {"includeStatus": False, "shareProviderFetches": False, "costRefreshIntervalSeconds": 7200,
                         "providerRetryAttempts": 3, "failureCooldownSeconds": 300, "costScanTimeoutSeconds": 600,
-                        "paceIndicatorStyle": "theme"}
+                        "paceIndicatorStyle": "theme", "ringLayout": "nested", "nestedRingWidth": "decreasing",
+                        "ringSize": 40, "ringWidth": 3, "ringGap": 2, "showProviderIcon": False,
+                        "showProviderName": False, "showRingValues": False, "showWindowLabels": False, "showRingTrack": False}
             assert all(report["settings"].get(key) == value for key, value in expected.items()), report
             call("error")
             report = wait_for(lambda report: any(item.get("ring") and item["value"] == 100 and item["timeLeft"] == -1 for item in report["tree"]))

@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import "CodexBarModel.mjs" as Model
+import "RingLayout.mjs" as RingLayout
 import ".." as Shell
 
 Item {
@@ -17,8 +18,17 @@ Item {
   readonly property int limit: maxRows > 0 ? maxRows : entries.length
   readonly property var rows: entries.slice(0, limit)
   readonly property int hiddenCount: Math.max(0, entries.length - rows.length)
-  readonly property int rowHeight: 56
-  readonly property int columns: Math.max(1, Math.min(bars, Math.floor((width - 44) / 40)))
+  readonly property var settings: state.settings || ({})
+  readonly property bool nested: settings.ringLayout === "nested"
+  readonly property bool showIcon: settings.showProviderIcon !== false
+  readonly property bool showName: settings.showProviderName !== false
+  readonly property bool showLabels: settings.showWindowLabels !== false
+  readonly property real ringSize: RingLayout.diameter(settings)
+  readonly property int identityWidth: showIcon || showName ? 44 : 0
+  readonly property int nestedCount: nested ? Math.max(1, ...rows.map(entry => Model.sidebarRings(entry, bars).length)) : 1
+  readonly property int rowHeight: Math.max(showIcon && showName ? 56 : 36, ringSize + (showLabels ? 23 : 12),
+    nested && (showLabels || settings.showRingValues !== false) ? nestedCount * 14 + 20 : 0)
+  readonly property int columns: nested ? bars : Math.max(1, Math.min(bars, Math.floor((width - identityWidth) / (ringSize + 11))))
   implicitHeight: rows.length * rowHeight + (hiddenCount > 0 ? 24 : 0)
 
   Repeater {
@@ -57,9 +67,12 @@ Item {
       }
 
       Item {
-        width: 44
+        visible: !root.nested
+        width: root.identityWidth
         height: parent.height
         ProviderIcon {
+          objectName: "sidebarProviderIcon"
+          visible: root.showIcon
           anchors.horizontalCenter: parent.horizontalCenter
           y: 10
           size: 18
@@ -69,7 +82,8 @@ Item {
         }
         Text {
           x: 0
-          y: 33
+          visible: root.showName
+          y: root.showIcon ? 33 : (parent.height - height) / 2
           width: parent.width
           text: Model.shortName(line.entry.provider)
           textFormat: Text.PlainText
@@ -80,19 +94,56 @@ Item {
           horizontalAlignment: Text.AlignHCenter
           elide: Text.ElideRight
         }
-        Rectangle {
-          x: 32
-          y: 8
-          width: 4
-          height: 4
-          radius: 2
-          visible: line.status !== ""
-          color: line.failed ? root.theme.red : root.theme.yellow
-        }
       }
 
+      Rectangle {
+        x: root.nested ? stack.x + stack.width - 3 : root.identityWidth > 0 ? 32 : parent.width - 6
+        y: 8
+        width: 4; height: 4; radius: 2
+        visible: line.status !== ""
+        color: line.failed ? root.theme.red : root.theme.yellow
+      }
+      RingStack {
+        id: stack
+        visible: root.nested
+        x: root.showName || root.showLabels || root.settings.showRingValues !== false ? 4 : (parent.width - width) / 2
+        y: (parent.height - height) / 2
+        width: root.ringSize; height: width
+        entry: line.entry
+        rings: line.gauges
+        theme: root.theme
+        nowMs: root.state.nowMs
+        settings: root.settings
+        showValue: false
+      }
+      Column {
+        visible: root.nested && line.gauges.length > 0
+        x: stack.x + stack.width + 8
+        width: Math.max(0, parent.width - x - 4)
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 4
+        Text {
+          visible: root.showName
+          width: parent.width
+          text: Model.shortName(line.entry.provider)
+          color: root.theme.ink
+          font.family: Shell.Theme.fontFamily; font.pixelSize: 10
+          elide: Text.ElideRight
+        }
+        Text {
+          objectName: "nestedRingLabels"
+          visible: root.showLabels || root.settings.showRingValues !== false
+          width: parent.width
+          text: line.gauges.map(gauge => [root.showLabels ? gauge.label : "", root.settings.showRingValues !== false
+            ? (gauge.kind === "window" ? Math.round(gauge.value) + "%" : gauge.text) : ""].filter(Boolean).join(" ")).join(" · ")
+          color: root.theme.ink; opacity: 0.6
+          font.family: Shell.Theme.fontFamily; font.pixelSize: 9
+          wrapMode: Text.Wrap
+        }
+      }
       Row {
-        x: 44
+        visible: !root.nested
+        x: root.identityWidth
         y: 6
         spacing: 0
         Repeater {
@@ -100,19 +151,22 @@ Item {
           delegate: Item {
             id: gauge
             required property var modelData
-            width: (line.width - 44) / root.columns
-            height: 46
+            width: (line.width - root.identityWidth) / root.columns
+            height: root.rowHeight - 10
             Ring {
               anchors.horizontalCenter: parent.horizontalCenter
-              width: 29
-              height: 29
+              width: root.ringSize
+              height: width
+              stroke: root.settings.ringWidth || 2
               value: gauge.modelData.value
               color: Model.sidebarRingColor(line.entry, gauge.modelData.row, root.theme)
-              trackColor: root.theme.track
+              trackColor: root.settings.showRingTrack === false ? "transparent" : root.theme.track
               timeLeft: Model.windowLeft(gauge.modelData.row, root.state.nowMs)
               markerStyle: root.state.settings?.paceIndicatorStyle || "position"
               tickColor: Model.paceMarkerColor(gauge.modelData.row, line.entry, markerStyle, root.theme, root.state.nowMs)
               Text {
+                objectName: "ringValue"
+                visible: root.settings.showRingValues !== false
                 anchors.centerIn: parent
                 text: gauge.modelData.kind === "window"
                     ? String(Math.round(gauge.modelData.value)) : gauge.modelData.text
@@ -124,7 +178,8 @@ Item {
               }
             }
             Text {
-              y: 33
+              visible: root.showLabels
+              y: root.ringSize + 4
               width: parent.width
               text: gauge.modelData.label
               textFormat: Text.PlainText
@@ -141,7 +196,7 @@ Item {
 
       Text {
         visible: line.gauges.length === 0
-        x: 48
+        x: root.nested ? stack.x + stack.width + 8 : root.identityWidth + 4
         width: Math.max(0, parent.width - x - 4)
         anchors.verticalCenter: parent.verticalCenter
         text: line.failed ? "Unavailable" : Model.headline(line.entry)?.text || "No limits"

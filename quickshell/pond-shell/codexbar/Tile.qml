@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import "CodexBarModel.mjs" as Model
+import "RingLayout.mjs" as RingLayout
 import ".." as Shell
 
 FocusScope {
@@ -11,6 +12,10 @@ FocusScope {
   required property var theme
   required property real nowMs
   property string markerStyle: "position"
+  property var settings: ({})
+  readonly property bool nested: settings.ringLayout === "nested"
+  readonly property real ringSize: RingLayout.diameter(settings)
+  readonly property bool showName: settings.showProviderName !== false
   signal clicked
 
   readonly property var entry: tile ? tile.entry : null
@@ -37,28 +42,51 @@ FocusScope {
     Behavior on color { ColorAnimation { duration: Shell.Theme.sidebarHoverDuration; easing.type: Easing.OutCubic } }
   }
   Ring {
+    visible: !root.nested
     anchors.horizontalCenter: parent.horizontalCenter
     y: root.compact ? (root.height - height) / 2 : 2
-    width: 28
-    height: 28
-    stroke: 2
+    width: root.ringSize
+    height: width
+    stroke: root.settings.ringWidth || 2
     value: root.tile?.rings?.[0]?.value || 0
     color: Model.sidebarRingColor(root.entry, root.row, root.theme)
-    trackColor: root.theme.track
+    trackColor: root.settings.showRingTrack === false ? "transparent" : root.theme.track
     timeLeft: Model.windowLeft(root.row, root.nowMs)
     markerStyle: root.markerStyle
     tickColor: Model.paceMarkerColor(root.row, root.entry, markerStyle, root.theme, root.nowMs)
     ProviderIcon {
+      objectName: "sidebarProviderIcon"
+      visible: root.settings.showProviderIcon !== false
       anchors.centerIn: parent
       provider: root.entry ? String(root.entry.provider) : ""
       size: 15
       color: root.failed ? root.theme.red : root.theme.ink
       markOpacity: root.failed ? 0.6 : 0.9
     }
+    Text {
+      objectName: "ringValue"
+      visible: root.settings.showProviderIcon === false && root.settings.showRingValues !== false
+      anchors.centerIn: parent
+      text: root.tile?.rings?.length ? (root.tile.rings[0].kind === "window"
+        ? String(Math.round(root.tile.rings[0].value)) : root.tile.rings[0].text) : ""
+      color: root.theme.ink
+      font.family: Shell.Theme.fontFamily; font.pixelSize: 9
+    }
+  }
+  RingStack {
+    visible: root.nested
+    anchors.horizontalCenter: parent.horizontalCenter
+    y: root.compact ? (root.height - height) / 2 : 2
+    width: root.ringSize; height: width
+    entry: root.entry
+    rings: root.tile?.rings || []
+    theme: root.theme
+    nowMs: root.nowMs
+    settings: root.settings
   }
   Text {
-    visible: !root.compact
-    y: 34
+    visible: !root.compact && root.showName
+    y: root.ringSize + 6
     width: parent.width
     text: root.entry ? Model.shortName(root.entry.provider) : ""
     textFormat: Text.PlainText

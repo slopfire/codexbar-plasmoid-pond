@@ -5,6 +5,7 @@ import path from "node:path";
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import * as Settings from "../CodexBarSettings.mjs";
+import * as RingLayout from "../RingLayout.mjs";
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "codexbar-settings-test-"));
@@ -50,6 +51,40 @@ try {
       assert.equal(Settings.validate({paceIndicatorStyle: value}).paceIndicatorStyle, value);
     for (const value of ["unknown", "", null, true])
       assert.throws(() => Settings.validate({paceIndicatorStyle: value}));
+  });
+  test("ring settings validate types, bounds and layout choices", () => {
+    for (const [key, min, max] of [["ringSize", 24, 44], ["ringWidth", 1, 5], ["ringGap", 0, 4]]) {
+      for (const value of [min, max]) assert.equal(Settings.validate({[key]: value})[key], value);
+      for (const value of [min - 1, max + 1, min + 0.5, String(min), null])
+        assert.throws(() => Settings.validate({[key]: value}));
+    }
+    for (const [key, values] of [["ringLayout", ["separate", "nested"]], ["nestedRingWidth", ["equal", "decreasing"]]]) {
+      for (const value of values) assert.equal(Settings.validate({[key]: value})[key], value);
+      for (const value of ["invalid", "", null, true]) assert.throws(() => Settings.validate({[key]: value}));
+    }
+    for (const key of ["showProviderIcon", "showProviderName", "showRingValues", "showWindowLabels", "showRingTrack"]) {
+      for (const value of [true, false]) assert.equal(Settings.validate({[key]: value})[key], value);
+      for (const value of [0, "false", null]) assert.throws(() => Settings.validate({[key]: value}));
+    }
+  });
+  test("nested rings fit the center with equal or decreasing widths and no overlap", () => {
+    assert.equal(RingLayout.diameter({}), 28);
+    assert.equal(RingLayout.diameter({ringLayout: "nested"}), 40);
+    assert.deepEqual(RingLayout.nestedRings(0, 40, 2, 1, "equal", 16), []);
+    for (const size of [24, 28, 40, 44]) for (const count of [1, 2, 3, 4, 5, 6])
+      for (const width of [1, 2, 5]) for (const gap of [0, 1, 4])
+        for (const style of ["equal", "decreasing"]) for (const center of [2, 14, 16]) {
+          const rings = RingLayout.nestedRings(count, size, width, gap, style, center);
+          assert.equal(rings.length, count);
+          assert.ok(rings.every(ring => ring.size > 0 && ring.stroke > 0));
+          assert.ok(rings[0].size <= size);
+          assert.ok(rings.at(-1).size - 2 * rings.at(-1).stroke >= center - 1e-9);
+          for (let i = 1; i < count; i++) {
+            assert.ok(rings[i].size <= rings[i - 1].size - 2 * rings[i - 1].stroke + 1e-9);
+            if (style === "equal") assert.equal(rings[i].stroke, rings[0].stroke);
+            else assert.ok(rings[i].stroke < rings[i - 1].stroke);
+          }
+        }
   });
   test("settings save atomically with private permissions and retain unknown keys", () => {
     fs.mkdirSync(path.dirname(file), {recursive: true});

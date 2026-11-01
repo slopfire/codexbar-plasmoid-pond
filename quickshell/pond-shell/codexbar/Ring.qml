@@ -14,10 +14,11 @@ Item {
   property real timeLeft: -1
   property string markerStyle: "position"
   property real stroke: 2.5
+  property real markerExtent: 3
   readonly property real percent: Math.max(0, Math.min(100, Number(value) || 0))
   readonly property real size: Math.min(width, height)
   // Leave room for the tick inside the item, including at 12 o'clock.
-  readonly property real radius: Math.max(0, (size - stroke - 3) / 2)
+  readonly property real radius: Math.max(0, (size - stroke - markerExtent) / 2)
   // Allow for round caps, the 1.5 px tick, and 0.5 px clearance on each side.
   readonly property real markerHalfGap: Math.asin(Math.min(1, (stroke / 2 + 1.25) / Math.max(1, radius))) * 180 / Math.PI
   readonly property bool hasMarker: markerStyle !== "off" && Number.isFinite(timeLeft) && timeLeft >= 0 && timeLeft <= 1
@@ -71,7 +72,7 @@ Item {
       anchors.horizontalCenter: parent.horizontalCenter
       y: (root.size / 2) - root.radius - height / 2
       width: 1.5
-      height: root.stroke + 3
+      height: root.stroke + root.markerExtent
       radius: width / 2
       color: root.tickColor
       antialiasing: true

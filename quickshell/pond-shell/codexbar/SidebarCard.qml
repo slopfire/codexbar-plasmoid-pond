@@ -11,7 +11,7 @@ Shell.Card {
   property real collapseProgress: 0
   property bool panelOpen: false
   property bool expandedView: true
-  property int cardBars: 2
+  property int cardBars: Math.max(1, Math.min(6, Number(state.settings?.cardBars) || 2))
   property int expandedRows: 3
   signal tileClicked(var entry)
   signal foldToggled

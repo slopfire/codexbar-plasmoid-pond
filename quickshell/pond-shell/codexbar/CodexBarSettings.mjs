@@ -470,13 +470,17 @@ export function validate(patch) {
   for (const [key, min, max] of [["refreshIntervalSeconds",60,86400],["timeoutSeconds",5,300],
     ["costRefreshIntervalSeconds",300,604800],["providerRetryAttempts",1,4],
     ["failureCooldownSeconds",30,3600],["costScanTimeoutSeconds",60,1800],
-    ["cardBars",1,6],["expandedRows",0,8]]) {
+    ["cardBars",1,6],["expandedRows",0,8],["ringSize",24,44],["ringWidth",1,5],["ringGap",0,4]]) {
     if (patch[key] !== undefined && (!Number.isInteger(patch[key]) || patch[key] < min || patch[key] > max))
       throw new Error("Check the value for " + key);
   }
-  for (const key of ["includeStatus", "shareProviderFetches"]) {
+  for (const key of ["includeStatus", "shareProviderFetches", "showProviderIcon", "showProviderName",
+    "showRingValues", "showWindowLabels", "showRingTrack"]) {
     if (patch[key] !== undefined && typeof patch[key] !== "boolean")
       throw new Error("Check the value for " + key);
+  }
+  for (const [key, choices] of [["ringLayout", ["separate", "nested"]], ["nestedRingWidth", ["equal", "decreasing"]]]) {
+    if (patch[key] !== undefined && !choices.includes(patch[key])) throw new Error("Check the value for " + key);
   }
   if (patch.paceIndicatorStyle !== undefined && !["position", "bar", "provider", "theme", "gaps", "off"].includes(patch.paceIndicatorStyle))
     throw new Error("Choose a pace indicator style");

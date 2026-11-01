@@ -80,7 +80,8 @@ Item {
     for (const key of ["provider", "providerConfigs", "cliPath", "refreshIntervalSeconds", "timeoutSeconds",
       "autoUpdateCli", "cost", "credits", "anonymizeEmail", "cardBars", "expandedRows", "expanded", "history", "includeStatus",
       "costRefreshIntervalSeconds", "shareProviderFetches", "providerRetryAttempts", "failureCooldownSeconds",
-      "costScanTimeoutSeconds", "paceIndicatorStyle"])
+      "costScanTimeoutSeconds", "paceIndicatorStyle", "ringLayout", "nestedRingWidth", "ringSize", "ringWidth", "ringGap",
+      "showProviderIcon", "showProviderName", "showRingValues", "showWindowLabels", "showRingTrack"])
       if (draft[key] !== undefined) update[key] = draft[key];
     try { Settings.validate(update); }
     catch (error) { validationError = error.message; return; }
@@ -177,6 +178,31 @@ Item {
         visible: root.tab === 2 && root.editing < 0
         SettingNumber { width: parent.width; text: "Sidebar provider rows"; minimum: 0; maximum: 8; value: root.draft.expandedRows === undefined ? 3 : root.draft.expandedRows; onChanged: value => root.patch("expandedRows", value) }
         Text { width: parent.width; text: "0 shows all providers. Extra providers appear as a count."; color: "white"; opacity: 0.5; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+        Text { text: "Ring layout"; color: "white"; opacity: 0.6; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+        SettingChoice {
+          width: parent.width
+          value: root.draft.ringLayout || "separate"
+          options: [{value: "separate", label: "Separate rings"}, {value: "nested", label: "Nested rings"}]
+          Accessible.name: "Ring layout"
+          onPicked: value => root.patch("ringLayout", value)
+        }
+        SettingChoice {
+          width: parent.width
+          visible: root.draft.ringLayout === "nested"
+          value: root.draft.nestedRingWidth || "equal"
+          options: [{value: "equal", label: "Equal ring widths"}, {value: "decreasing", label: "Thinner inner rings"}]
+          Accessible.name: "Nested ring width"
+          onPicked: value => root.patch("nestedRingWidth", value)
+        }
+        SettingNumber { width: parent.width; text: "Ring size, pixels"; minimum: 24; maximum: 44; step: 2; value: root.draft.ringSize || (root.draft.ringLayout === "nested" ? 40 : 28); onChanged: value => root.patch("ringSize", value) }
+        SettingNumber { width: parent.width; text: "Ring width, pixels"; minimum: 1; maximum: 5; value: root.draft.ringWidth || 2; onChanged: value => root.patch("ringWidth", value) }
+        SettingNumber { width: parent.width; visible: root.draft.ringLayout === "nested"; text: "Ring gap, pixels"; minimum: 0; maximum: 4; value: root.draft.ringGap === undefined ? 1 : root.draft.ringGap; onChanged: value => root.patch("ringGap", value) }
+        Text { width: parent.width; visible: root.draft.ringLayout === "nested"; text: "The shortest window is the outer ring. Widths and gaps scale down when needed to fit all rings."; color: "white"; opacity: 0.5; wrapMode: Text.Wrap; font.family: Shell.Theme.fontFamily; font.pixelSize: 11 }
+        SettingToggle { width: parent.width; text: "Show provider icons"; checked: root.draft.showProviderIcon !== false; onToggled: value => root.patch("showProviderIcon", value) }
+        SettingToggle { width: parent.width; text: "Show provider names"; checked: root.draft.showProviderName !== false; onToggled: value => root.patch("showProviderName", value) }
+        SettingToggle { width: parent.width; text: "Show ring values"; checked: root.draft.showRingValues !== false; onToggled: value => root.patch("showRingValues", value) }
+        SettingToggle { width: parent.width; text: "Show window labels"; checked: root.draft.showWindowLabels !== false; onToggled: value => root.patch("showWindowLabels", value) }
+        SettingToggle { width: parent.width; text: "Show ring tracks"; checked: root.draft.showRingTrack !== false; onToggled: value => root.patch("showRingTrack", value) }
         SettingNumber { width: parent.width; text: "Rings per provider"; minimum: 1; maximum: 6; value: root.draft.cardBars || 2; onChanged: value => root.patch("cardBars", value) }
         SettingToggle { width: parent.width; text: "Start with provider rows"; checked: root.draft.expanded !== false; onToggled: value => root.patch("expanded", value) }
         SettingToggle { width: parent.width; text: "Show daily spend chart"; checked: root.draft.history !== false; onToggled: value => root.patch("history", value) }

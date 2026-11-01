@@ -28,7 +28,13 @@ ShellRoot {
       if ("gauges" in node) out.push({gauges: node.gauges, provider: node.entry.provider,
         background: String(node.children[0].color), alpha: node.children[0].color.a});
       if ("hasMarker" in node) out.push({ring: true, value: node.value, timeLeft: node.timeLeft,
-        marker: node.hasMarker, style: node.markerStyle, visible: node.visible, size: node.size});
+        marker: node.hasMarker, style: node.markerStyle, visible: node.visible, size: node.size,
+        stroke: node.stroke, track: String(node.trackColor), extent: node.markerExtent});
+      if (node.objectName === "ringStack") out.push({stack: true, visible: node.visible,
+        geometry: node.geometry, count: node.rings.length, width: node.width, height: node.height});
+      if (node.objectName === "sidebarProviderIcon") out.push({sidebarIcon: true, visible: node.visible});
+      if (node.objectName === "nestedRingLabels") out.push({nestedLabels: true, visible: node.visible,
+        height: node.height, rowHeight: node.parent.parent.height, text: node.text});
       if (node.objectName === "historyDayDetails") out.push({dayDetails: true, text: node.text, visible: node.visible});
       if (node.objectName === "providerKey") out.push({keyField: true, masked: node.password && !node.revealed});
       if (node.objectName === "usageWindows" || node.objectName === "usageWindow" || node.objectName === "spendSection" || node.objectName === "providerNote" || node.objectName === "historySection" || node.objectName === "providerStatus" || node.objectName === "providerError" || node.objectName === "resetCredits")
@@ -81,7 +87,7 @@ ShellRoot {
   IpcHandler {
     target: "review"
     function report(): string {
-      return JSON.stringify({settings: usage.settings, tree: inspect(card), pages: inspect(drawer), rowHeight: card.height, railHeight: rail.height, railWidth: rail.width,
+      return JSON.stringify({settings: usage.settings, tree: inspect(card), railTree: inspect(rail), pages: inspect(drawer), rowHeight: card.height, railHeight: rail.height, railWidth: rail.width,
         page: drawer.currentPage, depth: drawer.depth, selection: drawer.currentSelection,
         transitioning: drawer.transitionRunning});
     }
@@ -102,6 +108,7 @@ ShellRoot {
       }
       walk(drawer);
     }
+    function appearance(patch: string) { usage.settings = Object.assign({}, usage.settings, JSON.parse(patch)); }
     function markerStyle(style: string) { usage.settings = Object.assign({}, usage.settings, {paceIndicatorStyle: style}); }
     function historyDay(index: int) {
       function walk(node) {
@@ -130,7 +137,9 @@ ShellRoot {
         if ("editing" in node && "draft" in node) {
           for (const [key, value] of Object.entries({includeStatus: false, shareProviderFetches: false,
             costRefreshIntervalSeconds: 7200, providerRetryAttempts: 3, failureCooldownSeconds: 300,
-            costScanTimeoutSeconds: 600, paceIndicatorStyle: "theme"})) node.patch(key, value);
+            costScanTimeoutSeconds: 600, paceIndicatorStyle: "theme", ringLayout: "nested", nestedRingWidth: "decreasing",
+            ringSize: 40, ringWidth: 3, ringGap: 2, showProviderIcon: false, showProviderName: false,
+            showRingValues: false, showWindowLabels: false, showRingTrack: false})) node.patch(key, value);
           return true;
         }
         for (const child of node.children || []) if (walk(child)) return true;
@@ -169,13 +178,13 @@ ShellRoot {
       Column {
         spacing: 12
         Text { text: "Reference width"; color: "white"; font.family: Pond.Theme.fontFamily; font.pixelSize: 12 }
-        Codexbar.SidebarCard { width: 196; state: usage; cardBars: 2 }
+        Codexbar.SidebarCard { width: 196; state: usage }
       }
       Column {
         spacing: 12
         Text { text: "Pond sidebar"; color: "white"; font.family: Pond.Theme.fontFamily; font.pixelSize: 12 }
         Codexbar.SidebarCard {
-          id: card; width: 156; state: usage; cardBars: 2
+          id: card; width: 156; state: usage
           onTileClicked: entry => { drawer.openProvider(entry); if (!drawer.opened) drawer.open(); }
         }
         Codexbar.SidebarCard { width: 156; state: usage; expandedView: false }
